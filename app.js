@@ -35,7 +35,6 @@ const relTime = ts => {
   if (diff < 7 * DAY) return new Date(ts).toLocaleDateString('en-US', { weekday: 'short' });
   return fmtShort(new Date(ts));
 };
-const mulberry32 = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 const hue = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const initials = n => (n || '').replace('@', '').split(/[\s._]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
 const avatar = (name, size = 40) => `<span class="avatar" style="--s:${size}px;--av:hsl(${hue(name || 'You')} 42% 40%)" aria-hidden="true">${esc(initials(name || 'You'))}</span>`;
@@ -142,24 +141,7 @@ const REELS = [
    (e.g. api.swipe -> POST /swipes, api.send -> POST /conversations/:id/messages).
    ===================================================================== */
 function seed() {
-  const t = today0(), rnd = mulberry32(7);
-  const weights = [['pickleball', .44], ['volleyball', .26], ['basketball', .18], ['soccer', .12]];
-  const pickSport = () => { let r = rnd(), a = 0; for (const [s, w] of weights) { a += w; if (r < a) return s; } return 'pickleball'; };
-  const placeFor = sp => { const o = PLACES.filter(p => p.sports.includes(sp)); return o[Math.floor(rnd() * o.length)].id; };
-  const buddies = { pickleball: 'jamie', basketball: 'marcus', volleyball: 'taylor', soccer: null };
-  const games = [];
-  for (let i = 210; i >= 6; i--) {
-    const d = addDays(t, -i), dow = d.getDay();
-    if (rnd() < (dow === 6 ? .5 : dow === 0 ? .18 : .24)) {
-      const sp = pickSport(), b = i < 120 && rnd() < .55 ? buddies[sp] : null;
-      games.push({ id: 'h' + i, sport: sp, place: placeFor(sp), date: iso(d), time: dow === 6 || dow === 0 ? '10:00' : '18:30', with: b ? [b] : [], met: rnd() < .4 ? 1 + Math.floor(rnd() * 2) : 0, note: '' });
-    }
-  }
-  games.push({ id: 'h3', sport: 'pickleball', place: 'kiwanis', date: iso(addDays(t, -3)), time: '18:30', with: ['jamie'], met: 1, note: 'Doubles, won 2 of 3' });
-  games.push({ id: 'h1', sport: 'volleyball', place: 'memorial', date: iso(addDays(t, -1)), time: '18:00', with: ['taylor'], met: 2, note: '' });
-  games.push({ id: 'u1', sport: 'pickleball', place: 'kiwanis', date: iso(addDays(t, 2)), time: '18:00', with: ['jamie'], met: 0, note: 'Court 3' });
-  games.push({ id: 'u2', sport: 'basketball', place: 'rec', date: iso(addDays(t, 5)), time: '19:00', with: ['marcus'], met: 0, note: '' });
-
+  const t = today0();
   const done = [];
   for (let i = 4; i >= 1; i--) { const d = addDays(t, -i), c = challengeFor(d); done.push({ date: iso(d), id: c.id, xp: c.xp }); }
 
@@ -181,7 +163,7 @@ function seed() {
         { from: 'them', text: 'Fun game last night. Same time next week?', at: now - 20 * H },
         { from: 'me', text: 'Count me in.', at: now - 19 * H } ] },
     ],
-    games,
+    games: [],
     challenges: { done, swaps: {} },
     reels: { liked: [], saved: [], following: ['@provo.pickle'], hidden: [], posts: [], comments: {} },
     ui: { playSport: 'all', placeSport: 'all', reelSport: 'all', reelTab: 'for-you', statsRange: 'week' },
@@ -198,6 +180,16 @@ const store = (() => {
   return { get: () => s, save, reset() { s = seed(); save(); } };
 })();
 const S = () => store.get();
+
+/* ---- Supabase ---- */
+const db = window.supabase.createClient(RALLY_CONFIG.SUPABASE_URL, RALLY_CONFIG.SUPABASE_ANON_KEY);
+const ME = 'me';
+const rowToGame = r => ({
+  id: r.event_id, sport: r.interest_id, place: r.venue_id,
+  date: r.event_date, time: String(r.event_time).slice(0, 5),
+  with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== ME),
+  met: r.new_people_met || 0, note: r.note || '',
+});
 const lastMsg = c => c.messages[c.messages.length - 1];
 const myHandle = () => '@' + ((S().profile.name || 'you').toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '') || 'you');
 
@@ -282,17 +274,55 @@ const api = {
 
   async places(sportId = 'all') { return PLACES.filter(p => sportId === 'all' || p.sports.includes(sportId)).sort((a, b) => a.mi - b.mi); },
 
+  async syncGames() {
+    const { data, error } = await db.from('event')
+      .select('event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)');
+    if (error) { console.error('Could not load games', error); return { error }; }
+    S().games = data.map(rowToGame); store.save(); return { error: null };
+  },
+
   async games({ from, to } = {}) {
     return S().games.filter(g => (!from || g.date >= from) && (!to || g.date <= to))
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   },
+
   async addGame(g) {
-    g.id = 'g' + Date.now(); S().games.push(g); store.save();
+    const { data, error } = await db.from('event').insert({
+      host_id: ME, interest_id: g.sport, venue_id: g.place,
+      event_date: g.date, event_time: g.time,
+      note: g.note || null, new_people_met: g.met,
+    }).select('event_id').single();
+    if (error) { console.error('Could not save game', error); return { error }; }
+    g.id = data.event_id;
+    const status = g.date < todayISO() ? 'played' : 'going';
+    const people = [ME, ...g.with];
+    const { error: aErr } = await db.from('event_attendee')
+      .insert(people.map(p => ({ event_id: g.id, profile_id: p, status })));
+    if (aErr) console.error('Could not save who is playing', aErr);
+    S().games.push(g); store.save();
     const t = todaysChallenge();
-    return { game: g, done: t.auto === 'game' && g.date >= todayISO() ? completeToday() : null };
+    return { game: g, done: t.auto === 'game' && g.date >= todayISO() ? completeToday() : null, error: null };
   },
-  async removeGame(id) { const s = S(), i = s.games.findIndex(g => g.id === id); if (i < 0) return null; const [g] = s.games.splice(i, 1); store.save(); return g; },
-  async restoreGame(g) { S().games.push(g); store.save(); },
+
+  async removeGame(id) {
+    const s = S(), i = s.games.findIndex(g => g.id === id);
+    if (i < 0) return null;
+    const { error } = await db.from('event').delete().eq('event_id', id);
+    if (error) { console.error('Could not remove game', error); return null; }
+    const [g] = s.games.splice(i, 1); store.save(); return g;
+  },
+
+  async restoreGame(g) {
+    const { data, error } = await db.from('event').insert({
+      host_id: ME, interest_id: g.sport, venue_id: g.place,
+      event_date: g.date, event_time: g.time,
+      note: g.note || null, new_people_met: g.met,
+    }).select('event_id').single();
+    if (error) { console.error('Could not restore game', error); return; }
+    const status = g.date < todayISO() ? 'played' : 'going';
+    await db.from('event_attendee').insert([ME, ...g.with].map(p => ({ event_id: data.event_id, profile_id: p, status })));
+    g.id = data.event_id; S().games.push(g); store.save();
+  },
 
   async reels({ sportId = 'all', tab = 'for-you' } = {}) {
     const r = S().reels, me = myHandle();
@@ -964,6 +994,7 @@ document.addEventListener('submit', async e => {
     const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: Math.max(0, Number($('#g-met').value) || 0), note: $('#g-note').value.trim() };
     if (!g.date || !g.time) return toast('Add a date and a time to save the game.');
     const notify = $('#g-notify').checked, res = await api.addGame(g);
+    if (res.error) return toast('Could not save the game. Check your connection and try again.');
     closeModal();
     const past = g.date < todayISO();
     if (g.with[0] && notify) {
@@ -1010,4 +1041,5 @@ window.matchMedia('(min-width: 821px)').addEventListener('change', () => { if (u
    ===================================================================== */
 buildNav();
 go((location.hash || '').slice(1) || 'home');
+api.syncGames().then(({ error }) => { render(); if (error) toast('Could not reach the database. Showing what is cached.'); });
 })();
