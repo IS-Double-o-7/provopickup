@@ -3,3 +3,6 @@
 .DS_Store
 node_modules/
 .claude/
+
+# local README preview helper, not part of the project
+_readme-preview.html
