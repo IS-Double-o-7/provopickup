@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rally Provo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Figtree:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side" aria-label="Main navigation">
+    <div class="brand"><span id="brandMark"></span>Rally<small>Provo</small></div>
+    <nav id="sideNav"></nav>
+    <div class="side-foot"><button class="me-btn" data-action="open-profile" id="sideMe"></button></div>
+  </aside>
+  <div class="min0">
+    <header class="topbar">
+      <div class="brand"><span id="brandMark2"></span>Rally</div>
+      <button class="me-btn" style="width:auto" data-action="open-profile" id="topMe" aria-label="Your profile"></button>
+    </header>
+    <main id="main">
+      <section class="view" data-view="home" id="v-home"></section>
+      <section class="view" data-view="play" id="v-play"></section>
+      <section class="view" data-view="messages" id="v-messages"></section>
+      <section class="view" data-view="courts" id="v-courts"></section>
+      <section class="view" data-view="calendar" id="v-calendar"></section>
+      <section class="view" data-view="reels" id="v-reels"></section>
+      <section class="view" data-view="challenge" id="v-challenge"></section>
+      <section class="view" data-view="stats" id="v-stats"></section>
+      <p class="foot-note">Prototype with sample players, courts and history for Provo. Your activity is saved in this browser. Reset it any time from your profile.</p>
+    </main>
+  </div>
+  <nav class="bottom-nav" id="bottomNav" aria-label="Main navigation"></nav>
+</div>
+
+<div class="modal" id="modal" hidden><div class="modal-card" role="dialog" aria-modal="true" id="modalCard"></div></div>
+<div class="sheet" id="sheet" hidden><div class="sheet-card" id="sheetCard"></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
