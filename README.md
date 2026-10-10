@@ -28,9 +28,13 @@ with a real person in a few minutes.
 
 ![Rally Provo entity relationship diagram](docs/erd.png)
 
-Ten entities. `Profile` is the hub — most other tables point back at it, several of them
-twice (a report has both a reporter and a reported-on; a swipe has both a swiper and a
-swiped-on).
+Eleven entities. `Profile` is the hub — most other tables point back at it, several of
+them twice (a report has both a reporter and a reported-on; a swipe has both a swiper
+and a swiped-on). The three green entities were added so a booked game has somewhere to
+live; everything else is the original dating-app model.
+
+The diagram is generated from the live schema, so it cannot drift away from the database.
+The source is `docs/erd.svg`.
 
 | Entity | Purpose | Key attributes |
 |---|---|---|
@@ -219,7 +223,7 @@ small change we made for the calendar.
 - `app.js` – data, logic and every screen
 - `db/schema.sql` – the tables from the ERD
 - `db/seed.sql` – sample rows for every table
-- `docs/erd.png` – the diagram above
+- `docs/erd.png` – the diagram above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
 
 ### How `app.js` is organized
 
