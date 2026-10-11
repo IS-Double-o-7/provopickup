@@ -27,7 +27,6 @@ with a real person in a few minutes.
 ## ERD
 
 ![Rally Provo entity relationship diagram](docs/erd.png)
-erd.png
 
 Eleven entities. `Profile` is the hub — most other tables point back at it, several of
 them twice (a report has both a reporter and a reported-on; a swipe has both a swiper
