@@ -38,6 +38,7 @@ const relTime = ts => {
 const hue = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const initials = n => (n || '').replace('@', '').split(/[\s._]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
 const avatar = (name, size = 40) => `<span class="avatar" style="--s:${size}px;--av:hsl(${hue(name || 'You')} 42% 40%)" aria-hidden="true">${esc(initials(name || 'You'))}</span>`;
+const photoAvatar = (src, name, size = 40) => src ? `<img class="avatar" src="${esc(src)}" alt="" style="--s:${size}px;object-fit:cover">` : avatar(name, size);
 const plural = (n, w, p = w + 's') => `${n} ${n === 1 ? w : p}`;
 
 const ICON = (() => {
@@ -458,8 +459,8 @@ function buildNav() {
 }
 function renderMe() {
   const p = S().profile, name = p.name || 'Your profile';
-  $('#sideMe').innerHTML = `${avatar(p.name, 36)}<span class="t"><b>${esc(name)}</b><small>${esc(Object.keys(p.sports).map(id => sport(id).name).join(', ') || 'Add your sports')}</small></span>`;
-  $('#topMe').innerHTML = avatar(p.name, 34);
+  $('#sideMe').innerHTML = `${photoAvatar(p.photo, p.name, 36)}<span class="t"><b>${esc(name)}</b><small>${esc(Object.keys(p.sports).map(id => sport(id).name).join(', ') || 'Add your sports')}</small></span>`;
+  $('#topMe').innerHTML = photoAvatar(p.photo, p.name, 34);
 }
 function updateBadges() {
   const n = S().conversations.reduce((a, c) => a + (c.unread || 0), 0);
@@ -606,7 +607,7 @@ async function doSwipe(dir) {
 }
 function openMatch(p, conv) {
   openModal(`<div class="match-card"><p class="eyebrow">Mutual like</p><h2>It’s a match</h2>
-    <div class="match-avs">${avatar(S().profile.name, 76)}${avatar(p.name, 76)}</div>
+    <div class="match-avs">${photoAvatar(S().profile.photo, S().profile.name, 76)}${avatar(p.name, 76)}</div>
     <p class="muted">You and ${esc(p.name.split(' ')[0])} both want to play. ${esc(p.name.split(' ')[0])} already sent you a message.</p>
     <div class="row" style="justify-content:center"><button class="btn" data-action="open-conv" data-id="${conv.id}">Reply now</button><button class="btn ghost" data-action="close">Keep browsing</button></div></div>`);
 }
@@ -890,13 +891,82 @@ function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
       <div class="row"><button class="btn" type="submit">Save game</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
     </form>`);
 }
+/* ---- Profile fields (shared by sign-up setup and the profile modal) ---- */
+const BIO_MAX = 300;
+const pendingPhoto = {};
+function photoField(pre, photo, required) {
+  return `<div class="field photo-field"><span class="lbl" id="${pre}-photo-lbl">Profile photo${required ? '' : ' (optional)'}</span>
+    <div class="photo-pick">
+      <span class="photo-preview" id="${pre}-photo-preview">${photo ? `<img src="${esc(photo)}" alt="Your profile photo">` : `<span aria-hidden="true">${ICON.user}</span>`}</span>
+      <div><button class="btn ghost sm" type="button" data-pick-photo="${pre}" aria-describedby="${pre}-photo-lbl">${photo ? 'Change photo' : 'Choose a photo'}</button>
+      <input class="sr-only" type="file" id="${pre}-photo" accept="image/*" data-photo="${pre}" tabindex="-1" aria-hidden="true">
+      <p class="muted small">A clear photo of your face helps players recognize you at the court.</p></div>
+    </div></div>`;
+}
+const sportLevelFields = (pre, sports) => `<div class="field"><span class="lbl">Sports you play and your level</span><div class="sport-levels">${SPORTS.map(s => `<div class="field"><label for="${pre}-sp-${s.id}" style="font-weight:600">${s.icon} ${s.name}</label><select id="${pre}-sp-${s.id}"><option value="">Not playing</option>${LEVELS.map(l => `<option ${sports[s.id] === l ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div></div>`;
+const bioField = (pre, bio) => `<div class="field"><label for="${pre}-bio">Bio <span class="muted" style="font-weight:500">(optional)</span></label><textarea id="${pre}-bio" maxlength="${BIO_MAX}" placeholder="What you like to play, how competitive you are, anything players should know.">${esc(bio || '')}</textarea></div>`;
+const availFields = (pre, avail) => `<fieldset class="field bare"><legend class="lbl">When you’re usually free</legend><div class="slot-grid">${Object.keys(SLOTS).map(k => `<label class="slot"><input type="checkbox" id="${pre}-av-${k.replace(' ', '-')}" value="${k}" ${avail.includes(k) ? 'checked' : ''}><span>${k}</span></label>`).join('')}</div></fieldset>`;
+const readSports = pre => { const o = {}; SPORTS.forEach(s => { const v = $(`#${pre}-sp-${s.id}`).value; if (v) o[s.id] = v; }); return o; };
+const readAvail = f => $$('.slot input', f).filter(x => x.checked).map(x => x.value);
+
+/* Shrink a chosen image to a 320px square JPEG so it is small enough to save. */
+function loadPhoto(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error('Choose an image file (JPG, PNG or HEIC).'));
+    if (file.size > 15 * 1024 * 1024) return reject(new Error('That photo is over 15 MB. Choose a smaller one.'));
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const S2 = 320, c = document.createElement('canvas'), side = Math.min(img.naturalWidth, img.naturalHeight);
+      c.width = c.height = S2;
+      c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, S2, S2);
+      URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file could not be read as an image.')); };
+    img.src = url;
+  });
+}
+
+/* ---- Profile setup after sign-up ---- */
+const needsProfile = user => user && !user.demo && S().profile.ownerId !== user.id;
+function showOnboarding(user) {
+  const p = S().profile, mine = p.ownerId === user.id;
+  pendingPhoto.o = mine ? p.photo || '' : '';
+  $('#app').hidden = true;
+  const el = $('#onboard'); el.hidden = false;
+  document.title = 'Create your profile · Rally Provo';
+  el.innerHTML = `<div class="onboard-inner">
+    <div class="onboard-top"><div class="brand">${brandSVG}Rally<small>Provo</small></div><button class="link" type="button" data-auth="sign-out">Log out</button></div>
+    <p class="eyebrow">Step 2 of 2 · ${esc(user.email || '')}</p>
+    <h1>Create your profile</h1>
+    <p class="muted onboard-lede">Players see this when they swipe. You can change it any time from your profile.</p>
+    <form class="form card onboard-form" id="onboardForm" novalidate>
+      ${photoField('o', pendingPhoto.o, true)}
+      <div class="field"><label for="o-name">First name</label><input id="o-name" maxlength="40" required autocomplete="given-name" value="${esc(mine ? p.name : '')}" placeholder="What should players call you?"></div>
+      ${sportLevelFields('o', mine ? p.sports : {})}
+      ${bioField('o', mine ? p.bio : '')}
+      ${availFields('o', mine ? p.avail : [])}
+      <p class="auth-msg" id="o-msg" role="alert" data-kind="error" hidden></p>
+      <button class="btn auth-submit" type="submit">Finish and start playing</button>
+    </form></div>`;
+  window.scrollTo({ top: 0 });
+  $('[data-pick-photo="o"]').focus();
+}
+function finishOnboarding() {
+  $('#onboard').hidden = true; $('#onboard').innerHTML = '';
+  $('#app').hidden = false; document.title = 'Rally Provo';
+  startApp();
+}
+
 function openProfile() {
-  const p = S().profile; ui.resetArmed = false;
+  const p = S().profile; ui.resetArmed = false; pendingPhoto.p = p.photo || '';
   openModal(`${modalHead('Your profile', 'How you play', 'Matches and suggestions use your sports, levels and free times.')}
     <form class="form" id="profileForm">
+      ${photoField('p', p.photo || '', false)}
       <div class="field"><label for="p-name">First name</label><input id="p-name" maxlength="40" value="${esc(p.name)}" placeholder="What should players call you?" autocomplete="given-name"></div>
-      <div class="field"><span class="lbl">Sports and level</span><div class="sport-levels">${SPORTS.map(s => `<div class="field"><label for="p-sp-${s.id}" style="font-weight:600">${s.icon} ${s.name}</label><select id="p-sp-${s.id}"><option value="">Not playing</option>${LEVELS.map(l => `<option ${p.sports[s.id] === l ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div></div>
-      <div class="field"><span class="lbl">When you’re usually free</span><div class="slot-grid">${Object.keys(SLOTS).map(k => `<label class="slot"><input type="checkbox" id="p-av-${k.replace(' ', '-')}" value="${k}" ${p.avail.includes(k) ? 'checked' : ''}><span>${k}</span></label>`).join('')}</div></div>
+      ${sportLevelFields('p', p.sports)}
+      ${bioField('p', p.bio)}
+      ${availFields('p', p.avail)}
+      <p class="auth-msg" id="p-msg" role="alert" data-kind="error" hidden></p>
       <div class="row"><button class="btn" type="submit">Save profile</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
       <div style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px"><p class="muted small" style="margin-bottom:10px">Start over with the original sample players, games and messages.</p><button class="btn danger sm" type="button" data-action="reset-demo">Reset all app data</button></div>
       ${window.RallyAuth && window.RallyAuth.user() ? `<div class="auth-account"><p class="muted small">Signed in as <b>${esc(window.RallyAuth.user().email)}</b></p><button class="btn ghost sm" type="button" data-auth="sign-out">Log out</button></div>` : ''}
@@ -938,7 +1008,7 @@ document.addEventListener('click', async e => {
     case 'open-profile': closeSheet(); openProfile(); break;
     case 'reset-demo':
       if (!ui.resetArmed) { ui.resetArmed = true; a.textContent = 'Tap again to erase your changes'; setTimeout(() => { ui.resetArmed = false; if (a.isConnected) a.textContent = 'Reset all app data'; }, 4000); break; }
-      await api.reset(); Object.assign(ui, { conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, typing: {} });
+      { const keep = S().profile; await api.reset(); if (keep.ownerId) { S().profile = keep; store.save(); } } Object.assign(ui, { conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, typing: {} });
       closeModal(); renderMe(); render(); toast('App data reset to the sample'); break;
 
     case 'pick-sport': saveUI('playSport', id); go('play'); break;
@@ -1008,11 +1078,22 @@ document.addEventListener('submit', async e => {
     if (res.done) challengeToast(res.done);
     else toast(past ? 'Game logged. Your stats are updated.' : `Added for ${fmtDay(g.date)} at ${fmtTime(g.time)}`, ui.route !== 'calendar' ? { label: 'View', run: () => go('calendar') } : null);
   }
-  if (f.id === 'profileForm') {
-    const sports = {}; SPORTS.forEach(s => { const v = $('#p-sp-' + s.id).value; if (v) sports[s.id] = v; });
-    const avail = $$('.slot input', f).filter(x => x.checked).map(x => x.value);
-    await api.saveProfile({ name: $('#p-name').value.trim(), sports, avail });
-    closeModal(); renderMe(); render(); toast('Profile saved. Your matches are updated.');
+  if (f.id === 'profileForm' || f.id === 'onboardForm') {
+    const pre = f.id === 'onboardForm' ? 'o' : 'p', setup = pre === 'o';
+    const msg = $(`#${pre}-msg`), fail = (text, el) => { msg.textContent = text; msg.hidden = false; if (el) el.focus(); };
+    msg.hidden = true;
+    const name = $(`#${pre}-name`).value.trim(), sports = readSports(pre), avail = readAvail(f), bio = $(`#${pre}-bio`).value.trim();
+    if (setup && !pendingPhoto.o) return fail('Add a profile photo so players know who they’re meeting.', $('[data-pick-photo="o"]'));
+    if (setup && !name) return fail('Add your first name.', $('#o-name'));
+    if (!Object.keys(sports).length) return fail('Pick at least one sport and your level in it.', $(`#${pre}-sp-${SPORTS[0].id}`));
+    if (!avail.length) return fail('Pick at least one time you’re usually free.', $('.slot input', f));
+    const btn = $('button[type="submit"]', f); btn.disabled = true;
+    try {
+      const user = window.RallyAuth && window.RallyAuth.user();
+      await api.saveProfile({ ...S().profile, name, photo: pendingPhoto[pre] || '', bio, sports, avail, ownerId: setup && user ? user.id : S().profile.ownerId });
+    } catch (err) { btn.disabled = false; return fail('Your profile could not be saved. ' + (err.message || 'Try again.')); }
+    if (setup) { finishOnboarding(); toast('Profile created. Welcome to Rally Provo!'); }
+    else { closeModal(); renderMe(); render(); toast('Profile saved. Your matches are updated.'); }
   }
   if (f.id === 'reelForm') {
     await api.postReel({ title: $('#r-title').value.trim(), sport: $('#r-sport').value, cat: $('#r-cat').value, caption: $('#r-caption').value.trim() });
@@ -1024,7 +1105,22 @@ document.addEventListener('submit', async e => {
   }
 });
 
-document.addEventListener('change', e => {
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-pick-photo]'); if (b) $(`#${b.dataset.pickPhoto}-photo`).click();
+});
+document.addEventListener('change', async e => {
+  const pre = e.target.dataset && e.target.dataset.photo;
+  if (pre) {
+    const msg = $(`#${pre}-msg`);
+    try {
+      const src = await loadPhoto(e.target.files[0]); pendingPhoto[pre] = src;
+      $(`#${pre}-photo-preview`).innerHTML = `<img src="${src}" alt="Your profile photo">`;
+      $(`[data-pick-photo="${pre}"]`).textContent = 'Change photo';
+      if (msg) msg.hidden = true;
+    } catch (err) { if (msg) { msg.textContent = err.message; msg.hidden = false; } }
+    e.target.value = '';
+    return;
+  }
   if (e.target.id === 'g-sport') $('#g-place').innerHTML = placeOptions(e.target.value, $('#g-place').value);
 });
 
@@ -1041,11 +1137,15 @@ window.matchMedia('(min-width: 821px)').addEventListener('change', () => { if (u
 /* =====================================================================
    9. Boot
    ===================================================================== */
-function boot() {
+let started = false;
+function startApp() {
+  if (started) return; started = true;
   buildNav();
   go((location.hash || '').slice(1) || 'home');
   api.syncGames().then(({ error }) => { render(); if (error) toast('Could not reach the database. Showing what is cached.'); });
 }
-// Nothing renders until auth.js reports a signed-in player.
-if (window.RallyAuth) window.RallyAuth.whenSignedIn(boot); else boot();
+// Nothing renders until auth.js reports a signed-in player, and a new
+// player sets up their profile before seeing the app.
+function boot(user) { if (needsProfile(user)) showOnboarding(user); else startApp(); }
+if (window.RallyAuth) window.RallyAuth.whenSignedIn(boot); else startApp();
 })();

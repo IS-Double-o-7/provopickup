@@ -165,8 +165,13 @@ on their profile.
   "check your inbox" message and the player logs in after clicking the link. The link
   returns to the page they signed up from, so that URL must be listed under
   **Authentication → URL Configuration** in the Supabase dashboard.
+- **New players set up a profile before they see the app:** a photo (required), first
+  name, at least one sport with a skill level, an optional bio (up to 300 characters),
+  and at least one time they are usually free. Photos are cropped to a 320px square in
+  the browser. Players can change all of this later from **Your profile**.
 - Sign-in is front-end only so far: the `profile` table is not yet linked to the signed-in
-  account, and app data other than the calendar is still kept per browser, not per account.
+  account (the profile, photo included, is saved through `api.saveProfile`, which still
+  writes to this browser), and app data other than the calendar is still kept per browser, not per account.
 
 ---
 
