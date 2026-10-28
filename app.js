@@ -182,7 +182,8 @@ const store = (() => {
 const S = () => store.get();
 
 /* ---- Supabase ---- */
-const db = window.supabase.createClient(RALLY_CONFIG.SUPABASE_URL, RALLY_CONFIG.SUPABASE_ANON_KEY);
+// auth.js creates the client so the login screen and the app share one session.
+const db = window.rallyDb || window.supabase.createClient(RALLY_CONFIG.SUPABASE_URL, RALLY_CONFIG.SUPABASE_ANON_KEY);
 const ME = 'me';
 const rowToGame = r => ({
   id: r.event_id, sport: r.interest_id, place: r.venue_id,
@@ -898,6 +899,7 @@ function openProfile() {
       <div class="field"><span class="lbl">When you’re usually free</span><div class="slot-grid">${Object.keys(SLOTS).map(k => `<label class="slot"><input type="checkbox" id="p-av-${k.replace(' ', '-')}" value="${k}" ${p.avail.includes(k) ? 'checked' : ''}><span>${k}</span></label>`).join('')}</div></div>
       <div class="row"><button class="btn" type="submit">Save profile</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
       <div style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px"><p class="muted small" style="margin-bottom:10px">Start over with the original sample players, games and messages.</p><button class="btn danger sm" type="button" data-action="reset-demo">Reset all app data</button></div>
+      ${window.RallyAuth && window.RallyAuth.user() ? `<div class="auth-account"><p class="muted small">Signed in as <b>${esc(window.RallyAuth.user().email)}</b></p><button class="btn ghost sm" type="button" data-auth="sign-out">Log out</button></div>` : ''}
     </form>`);
 }
 function openComposer() {
@@ -1039,7 +1041,11 @@ window.matchMedia('(min-width: 821px)').addEventListener('change', () => { if (u
 /* =====================================================================
    9. Boot
    ===================================================================== */
-buildNav();
-go((location.hash || '').slice(1) || 'home');
-api.syncGames().then(({ error }) => { render(); if (error) toast('Could not reach the database. Showing what is cached.'); });
+function boot() {
+  buildNav();
+  go((location.hash || '').slice(1) || 'home');
+  api.syncGames().then(({ error }) => { render(); if (error) toast('Could not reach the database. Showing what is cached.'); });
+}
+// Nothing renders until auth.js reports a signed-in player.
+if (window.RallyAuth) window.RallyAuth.whenSignedIn(boot); else boot();
 })();
