@@ -154,6 +154,27 @@ project's URL and publishable key in `config.js`.
 
 ---
 
+## Signing in
+
+Every visitor lands on a **Log in / Sign up** screen first. Sign up takes an email and a
+password (at least 6 characters); after that, Supabase Auth keeps the session in the
+browser, so a returning player goes straight into the app until they choose **Log out**
+on their profile.
+
+- If the Supabase project has **Confirm email** turned on (the default), sign-up shows a
+  "check your inbox" message and the player logs in after clicking the link. The link
+  returns to the page they signed up from, so that URL must be listed under
+  **Authentication → URL Configuration** in the Supabase dashboard.
+- **New players set up a profile before they see the app:** a photo (required), first
+  name, at least one sport with a skill level, an optional bio (up to 300 characters),
+  and at least one time they are usually free. Photos are cropped to a 320px square in
+  the browser. Players can change all of this later from **Your profile**.
+- Sign-in is front-end only so far: the `profile` table is not yet linked to the signed-in
+  account (the profile, photo included, is saved through `api.saveProfile`, which still
+  writes to this browser), and app data other than the calendar is still kept per browser, not per account.
+
+---
+
 ## Verifying the Vertical Slice
 
 **The slice is: booking an event on the Calendar.** The button writes a row to Postgres,
@@ -170,7 +191,7 @@ What happens when you click Save:
 
 ### Steps to verify
 
-1. Open the app and click **Calendar** in the navigation.
+1. Open the app, sign up or log in, and click **Calendar** in the navigation.
 2. Click **Add a game**.
 3. Fill the form in — pick a sport, a court, **a date you will recognize**, and a time.
    Put something memorable in the Note field, like `TEST — delete me`.
@@ -220,6 +241,7 @@ small change we made for the calendar.
 - `styles.css` – all styling, with light and dark themes driven by CSS variables at the top
 - `config.js` – Supabase URL and publishable key
 - `config.example.js` – template for pointing the app at your own Supabase project
+- `auth.js` – the log in / sign up screen; owns the shared Supabase client and holds the app back until someone is signed in
 - `app.js` – data, logic and every screen
 - `db/schema.sql` – the tables from the ERD
 - `db/seed.sql` – sample rows for every table
