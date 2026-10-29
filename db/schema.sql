@@ -176,11 +176,9 @@ grant execute on function public.my_matches() to authenticated;
 -- readable by anyone; a signed-in user may write only their own rows.
 --
 -- Known gaps, deliberately left for a team decision (see GitHub #3/#4):
---   * messages and reporting still allow a broad anonymous read. Neither is
---     wired to the app yet. Tightening them changes a public data-access rule,
---     which AGENTS.md section 11 reserves for the team.
 --   * event and event_attendee still allow anonymous insert and delete, from
---     the pre-auth calendar slice.
+--     the pre-auth calendar slice. Tightening them would break the working
+--     calendar for a signed-out visitor, so it is left for a team decision.
 
 alter table profile              enable row level security;
 alter table profile_private      enable row level security;
@@ -199,12 +197,20 @@ alter table event_attendee       enable row level security;
 -- Reads. profile now holds only profile_id, name, bio and auth_uid, so it is
 -- safe to expose; contact details live in profile_private.
 create policy "read profile"              on profile              for select to anon, authenticated using (true);
+
+-- RLS decides which ROWS are visible; GRANT decides which COLUMNS. auth_uid is
+-- a player's Supabase Auth UUID and is not on the approved candidate field
+-- list, so it is withheld at the column level. To find your own row, call
+-- current_profile_id() rather than selecting auth_uid.
+revoke select on profile from anon, authenticated;
+grant select (profile_id, name, bio)           on profile to anon, authenticated;
+grant insert (profile_id, name, bio, auth_uid) on profile to authenticated;
+grant update (name, bio)                       on profile to authenticated;
 create policy "read interests"            on interests            for select to anon, authenticated using (true);
 create policy "read profile_interest"     on profile_interest     for select to anon, authenticated using (true);
 create policy "read availability"         on profile_availability for select to anon, authenticated using (true);
 create policy "read photo"                on photo                for select to anon, authenticated using (true);
-create policy "read messages"             on messages             for select to anon, authenticated using (true);
-create policy "read reporting"            on reporting            for select to anon, authenticated using (true);
+
 create policy "read venue"                on venue                for select to anon, authenticated using (true);
 create policy "read venue_interest"       on venue_interest       for select to anon, authenticated using (true);
 
@@ -236,6 +242,15 @@ create policy "write own availability" on profile_availability for all to authen
 create policy "write own photo" on photo for all to authenticated
   using (user_id = public.current_profile_id())
   with check (user_id = public.current_profile_id());
+
+-- Direct messages are visible to their two participants, and a report only to
+-- the player who filed it.
+create policy "read own messages" on messages for select to authenticated
+  using (sender_id = public.current_profile_id()
+      or receiver_id = public.current_profile_id());
+
+create policy "read own reports" on reporting for select to authenticated
+  using (reporter = public.current_profile_id());
 
 create policy "write own choices" on choice for all to authenticated
   using (swiper = public.current_profile_id())
