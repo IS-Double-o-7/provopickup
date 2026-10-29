@@ -4,6 +4,6 @@
 window.RALLY_CONFIG = {
   SUPABASE_URL: 'https://YOUR-PROJECT-REF.supabase.co',
   SUPABASE_ANON_KEY: 'YOUR-PUBLISHABLE-ANON-KEY',
-  // Set to the public-read profile image bucket created by the database migration.
-  PROFILE_PHOTO_BUCKET: 'YOUR-PROFILE-PHOTO-BUCKET',
+  // Public-read bucket created by the database migration.
+  PROFILE_PHOTO_BUCKET: 'profile-photos',
 };
