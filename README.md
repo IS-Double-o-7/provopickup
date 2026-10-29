@@ -28,10 +28,35 @@ with a real person in a few minutes.
 
 ![Rally Provo entity relationship diagram](docs/erd.png)
 
-Eleven entities. `Profile` is the hub — most other tables point back at it, several of
+Thirteen entities. `Profile` is the hub — most other tables point back at it, several of
 them twice (a report has both a reporter and a reported-on; a swipe has both a swiper
 and a swiped-on). The three green entities were added so a booked game has somewhere to
 live; everything else is the original dating-app model.
+
+> **The diagram above is out of date.** It still shows the pre-authentication model.
+> Migration `db/migrations/001_auth_profiles_photos_matching.sql` added
+> `profile_private` and `profile_availability`, added `Profile.AuthUID`, and moved
+> `Birthday`, `HomePhone`, `CellPhone`, `WorkPhone` and `ReportingCounter` out of
+> `Profile` into `profile_private`. Regenerate with `python3 docs/make_erd.py`, which
+> writes `docs/erd.svg`; `docs/erd.png` is exported from that SVG by hand.
+
+### Profile, private fields and availability
+
+A real account maps to its profile through `profile.auth_uid`, which references
+`auth.users(id)`. The primary key stays the text `profile_id`, so the eleven seed
+profiles, the six foreign keys pointing at them and the existing calendar rows all keep
+working; seed profiles simply have a null `auth_uid` and nobody can claim them.
+
+`profile` itself now holds only what another player is allowed to see — `profile_id`,
+`name`, `bio` and `auth_uid`. Contact details and the moderation counter live in
+`profile_private`, which only the owner can read. `profile_availability` stores one row
+per free time slot, drawn from the same eight slots the UI offers.
+
+Two helper functions back the policies: `current_profile_id()` resolves the signed-in
+user to their `profile_id`, and `my_matches()` returns the profiles that have liked you
+back. Both are `SECURITY DEFINER` — the first because a policy on `profile` that queried
+`profile` would recurse, the second so a match can be confirmed without exposing a
+like that has not been reciprocated.
 
 The diagram is generated from the live schema, so it cannot drift away from the database.
 The source is `docs/erd.svg`.
@@ -151,6 +176,16 @@ Supabase dashboard and resume it, then refresh.
 The schema and sample rows live in `db/schema.sql` and `db/seed.sql`. In a new Supabase
 project, open **SQL Editor**, run `schema.sql`, then run `seed.sql`, then put that
 project's URL and publishable key in `config.js`.
+
+`db/schema.sql` is always the current shape of the database, so a fresh project needs
+only that file. `db/migrations/` holds the changes that brought an *existing* database up
+to it — run a migration only against a project created before it. Migration 001 moves
+data (contact columns out of `profile`), so take a backup before applying it to a
+database with real rows in it.
+
+Profile photos need a Storage bucket named `profile-photos`, which `schema.sql` and the
+migration both create. Objects are stored at `<auth.uid()>/<filename>`: public to read,
+writable only by the user who owns that folder.
 
 ---
 
