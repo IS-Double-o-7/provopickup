@@ -195,9 +195,12 @@ function profileFromRows(row, interests = [], avail = [], photos = []) {
   };
 }
 async function loadProfileFor(user) {
-  const { data: row, error: profileError } = await db.from('profile')
-    .select('profile_id,auth_uid,name,bio').eq('auth_uid', user.id).maybeSingle();
+  const { data: profileId, error: profileError } = await db.rpc('current_profile_id');
   if (profileError) throw authError('Could not load your profile.', profileError);
+  if (!profileId) return null;
+  const { data: row, error: rowError } = await db.from('profile')
+    .select('profile_id,name,bio').eq('profile_id', profileId).maybeSingle();
+  if (rowError) throw authError('Could not load your profile.', rowError);
   if (!row) return null;
   const [interestsResult, availabilityResult, photosResult] = await Promise.all([
     db.from('profile_interest').select('interest_id,skill_level').eq('user_id', row.profile_id),
@@ -210,7 +213,7 @@ async function loadProfileFor(user) {
   if (interestsError) throw authError('Could not load your sports and skill levels.', interestsError);
   if (availabilityError) throw authError('Could not load your availability.', availabilityError);
   if (photosError) throw authError('Could not load your profile photo.', photosError);
-  return profileFromRows(row, interests, (availability || []).map(x => x.slot), photos || []);
+  return profileFromRows({ ...row, auth_uid: user.id }, interests, (availability || []).map(x => x.slot), photos || []);
 }
 async function persistProfilePhoto(user, profileId, photo) {
   if (!photo) throw authError('Choose a profile photo before saving.');
@@ -307,10 +310,9 @@ const api = {
     if (!wanted.length) throw authError('Choose at least one sport and skill level.');
     const wantedSlots = [...new Set((p.avail || []).filter(slot => Object.hasOwn(SLOTS, slot)))];
     if (!wantedSlots.length) throw authError('Choose at least one time you are usually free.');
-    const { data: currentProfile, error: profileReadError } = await db.from('profile')
-      .select('profile_id').eq('auth_uid', user.id).maybeSingle();
+    const { data: existingProfileId, error: profileReadError } = await db.rpc('current_profile_id');
     if (profileReadError) throw authError('Could not check your profile.', profileReadError);
-    let profileId = currentProfile?.profile_id;
+    let profileId = existingProfileId;
     if (!profileId) {
       const { data, error } = await db.from('profile')
         .insert({ profile_id: user.id, auth_uid: user.id, ...profileFields })

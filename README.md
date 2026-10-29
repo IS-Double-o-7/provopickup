@@ -174,7 +174,9 @@ on their profile.
   and photo. Photos are uploaded to the configured public-read Storage bucket and the
   resulting URL is stored in `photo.photo_file`. Set `PROFILE_PHOTO_BUCKET` in
   `config.js` to the bucket created by the database migration.
-- The profile adapter depends on the database migration that adds `profile.auth_uid`,
+- The profile adapter resolves the signed-in player's row with the owner-scoped
+  `current_profile_id()` function; it does not select `auth_uid` from public profile
+  reads. It depends on the database migration that adds `profile.auth_uid`,
   `current_profile_id()`, `profile_availability`, and owner-write policies, plus the
   profile-photo Storage bucket and `photo` write policy. The repository's base schema
   does not include those changes yet, so profile persistence is not end-to-end until
