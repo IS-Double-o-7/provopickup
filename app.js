@@ -219,14 +219,14 @@ async function persistProfilePhoto(user, profileId, photo) {
   if (!photo) throw authError('Choose a profile photo before saving.');
   let photoUrl = photo;
   if (photo.startsWith('data:image/')) {
-    const bucketName = RALLY_CONFIG.PROFILE_PHOTO_BUCKET;
+    const bucketName = RALLY_CONFIG.PROFILE_PHOTO_BUCKET || 'profile-photos';
     if (!bucketName || bucketName.startsWith('YOUR-')) throw authError('Profile photo storage is not configured yet.');
     const blob = await (await fetch(photo)).blob();
     const path = `${user.id}/profile.jpg`;
     const bucket = db.storage.from(bucketName);
     const { error: uploadError } = await bucket.upload(path, blob, { contentType: 'image/jpeg', upsert: true });
     if (uploadError) throw authError('Your profile fields were saved, but your photo could not be uploaded.', uploadError);
-    photoUrl = bucket.getPublicUrl(path).data.publicUrl;
+    photoUrl = `${bucket.getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
   }
   const { data: existing, error: readError } = await db.from('photo').select('photo_id')
     .eq('user_id', profileId).order('display_order_id', { ascending: true }).limit(1);
