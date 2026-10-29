@@ -178,5 +178,7 @@ A(f'<text x="{lx+52}" y="{ly+92}" font-size="12.5" fill="#46506a">'
 
 A('</svg>')
 
-open("/Users/jordanharris/provo-pickup/docs/erd.svg", "w").write("\n".join(out))
+import os
+_out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "erd.svg")
+open(_out, "w").write("\n".join(out))
 print("svg written")
