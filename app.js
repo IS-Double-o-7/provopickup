@@ -1197,7 +1197,7 @@ function showOnboarding(user) {
   const el = $('#onboard'); el.hidden = false;
   document.title = 'Create your profile · Rally Provo';
   el.innerHTML = `<div class="onboard-inner">
-    <div class="onboard-top"><div class="brand">${brandSVG}Rally<small>Provo</small></div><button class="link" type="button" data-auth="sign-out">Log out</button></div>
+    <div class="onboard-top"><div class="brand">${brandSVG}Rally<small>Provo</small></div></div>
     <p class="eyebrow">Step 2 of 2 · ${esc(user.email || '')}</p>
     <h1>Create your profile</h1>
     <p class="muted onboard-lede">Players see this when they swipe. You can change it any time from your profile.</p>
