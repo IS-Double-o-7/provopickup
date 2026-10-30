@@ -1185,12 +1185,11 @@ function loadPhoto(file) {
 }
 
 /* ---- Profile setup after sign-up ---- */
-const needsProfile = user => {
-  if (!user || user.demo) return false;
-  const p = S().profile;
-  return p.ownerId !== user.id || !String(p.name || '').trim() || !p.photo ||
-    !Object.keys(p.sports || {}).length || !Array.isArray(p.avail) || !p.avail.length;
-};
+// Setup is only for accounts that have no profile row at all. Anyone who
+// already has a profile goes straight into the app, even if a field is missing.
+const needsProfile = user => Boolean(user && !user.demo && !S().profile.id);
+const isComplete = p => Boolean(p && String(p.name || '').trim() && p.photo &&
+  Object.keys(p.sports || {}).length && Array.isArray(p.avail) && p.avail.length);
 function showOnboarding(user) {
   const p = S().profile, mine = p.ownerId === user.id;
   pendingPhoto.o = mine ? p.photo || '' : '';
@@ -1415,6 +1414,10 @@ function startApp() {
 // Nothing renders until auth.js reports a signed-in player, and a new
 // player sets up their profile before seeing the app.
 async function boot(user) {
+  // A profile set up before profiles were saved to the database lives only in
+  // this browser. Keep a copy before api.profile() replaces it with the database version.
+  const local = S().profile;
+  const localCopy = local && local.ownerId === user.id && !local.id && isComplete(local) ? { ...local } : null;
   try { await api.profile(); }
   catch (error) {
     const el = $('#onboard');
@@ -1423,7 +1426,14 @@ async function boot(user) {
     el.innerHTML = `<div class="onboard-inner"><h1>Could not load your profile</h1><p class="auth-msg" role="alert">${esc(error.message || 'Please try again.')}</p><div class="row"><button class="btn" type="button" data-action="retry-profile">Try again</button><button class="btn ghost" type="button" data-auth="sign-out">Log out</button></div></div>`;
     return;
   }
-  if (needsProfile(user)) showOnboarding(user); else startApp();
+  if (needsProfile(user) && localCopy) {
+    // Existing account with a browser-only profile: move it to the database instead of asking again.
+    try { await api.saveProfile({ ...localCopy, id: null, ownerId: user.id }); }
+    catch (error) { S().profile = localCopy; store.save(); return showOnboarding(user); }
+  }
+  if (needsProfile(user)) return showOnboarding(user);
+  startApp();
+  if (!isComplete(S().profile)) toast('Your profile is missing a few details.', { label: 'Finish profile', run: () => openProfile() });
 }
 if (window.RallyAuth) window.RallyAuth.whenSignedIn(boot); else startApp();
 })();
