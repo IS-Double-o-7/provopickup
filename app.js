@@ -232,7 +232,8 @@ async function loadPlayerRows(profileIds) {
       SPORTS.some(s => s.id === x.interest_id) && LEVELS.includes(x.skill_level));
     const player = {
       id: row.profile_id, name: row.name || '', bio: row.bio || '',
-      photo: photosByPlayer.get(row.profile_id)?.[0]?.photo_file || '',
+      // Seed rows hold bare filenames, not URLs; show initials for those instead of a broken image.
+      photo: isPhotoUrl(photosByPlayer.get(row.profile_id)?.[0]?.photo_file) ? photosByPlayer.get(row.profile_id)[0].photo_file : '',
       sports: interests.map(x => [x.interest_id, x.skill_level]),
       avail: [...new Set((availabilityByPlayer.get(row.profile_id) || []).map(x => x.slot).filter(slot => Object.hasOwn(SLOTS, slot)))],
     };
@@ -241,6 +242,7 @@ async function loadPlayerRows(profileIds) {
   });
   return players;
 }
+const isPhotoUrl = v => typeof v === 'string' && /^https?:\/\//.test(v);
 async function loadPlayersForIds(ids) {
   const players = await loadPlayerRows(ids);
   const byId = new Map(players.map(p => [p.id, p]));
@@ -425,7 +427,7 @@ const api = {
       if (profilesError) throw authError('Could not load players for matching.', profilesError);
       const candidates = await loadPlayerRows((profiles || []).map(row => row.profile_id));
       const mine = S().profile;
-      return candidates.filter(p => !excluded.has(p.id) && p.name && p.photo && p.sports.length && p.avail.length)
+      return candidates.filter(p => !excluded.has(p.id) && p.name && p.sports.length && p.avail.length)
         .filter(p => sportId === 'all' || p.sports.some(([sp]) => sp === sportId))
         .map(p => ({ ...p, ...compat(p, mine) }))
         .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
@@ -647,7 +649,7 @@ function badges(past) {
 }
 
 function replyFor(text, p) {
-  const t = text.toLowerCase(), court = place(p.court).name;
+  const t = text.toLowerCase(), court = (place(p.court) || { name: 'the usual courts' }).name;
   const pick = a => a[Math.floor(Math.random() * a.length)];
   if (/put us down|added a game/.test(t)) return pick(['Perfect, it’s on my calendar too.', 'Locked in. See you there!']);
   if (/\b(mon|tue|wed|thu|fri|sat|sun)|tomorrow|tonight|\d/.test(t)) return pick([`That works for me. ${court}?`, 'Works for me. I’ll bring a ball.']);
@@ -902,7 +904,7 @@ async function renderChat() {
     return sep + `<div class="bubble ${m.kind === 'game' ? 'game' : m.from}">${esc(m.text)}</div>`;
   }).join('');
   const shared = p.sports.find(([s]) => me.sports[s]);
-  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, `Meet at ${place(p.court).name}?`].filter(Boolean);
+  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, place(p.court) ? `Meet at ${place(p.court).name}?` : null].filter(Boolean);
   box.innerHTML = `
     <div class="chat-head">
       <button class="icon-btn back-btn" data-action="conv-back" aria-label="Back to conversations">${ICON.back}</button>
