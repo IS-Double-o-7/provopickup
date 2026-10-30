@@ -23,18 +23,45 @@ insert into venue_interest (venue_id, interest_id) values
   ('byu','tennis'), ('byu','pickleball'),
   ('memorial','volleyball'), ('memorial','spikeball');
 
-insert into profile (profile_id, name, bio, birthday, cell_phone) values
-  ('me','You','This is the signed-in demo player.','2001-04-12','801-555-0100'),
-  ('jamie','Jamie Lee','Competitive enough to keep score, social enough to grab tacos after.','2000-03-04','801-555-0101'),
-  ('marcus','Marcus Chen','Weeknight runs, weekend pickup, and learning to love a close game.','2003-07-19','801-555-0102'),
-  ('taylor','Taylor Brooks','Looking for consistent games and good energy. Let''s make it a habit.','1998-11-02','801-555-0103'),
-  ('sam','Sam Rivera','Just moved to Provo and looking for a regular crew. Always down for one more game.','2002-01-27','801-555-0104'),
-  ('noor','Noor Haddad','3.5 DUPR and happy to drill dinks with anyone who wants to get better.','1997-05-15','801-555-0105'),
-  ('priya','Priya Nair','Former high school tennis player easing back in. Patient with beginners, happy to rally.','1999-09-08','801-555-0106'),
-  ('hannah','Hannah Kim','Grad student. Badminton is my stress relief and volleyball is my social life.','2004-02-21','801-555-0107'),
-  ('diego','Diego Alvarez','I organize a Sunday pickup game at North Park. We always need a few more.','2001-06-30','801-555-0108'),
-  ('eli','Eli Watson','Saturday morning runs at the Rec. Trying pickleball because my knees asked nicely.','1995-12-11','801-555-0109'),
-  ('chris','Chris Okafor','Captain of a very average rec kickball team. We bring snacks and good attitudes.','2000-08-17','801-555-0110');
+insert into profile (profile_id, name, bio) values
+  ('me','You','This is the signed-in demo player.'),
+  ('jamie','Jamie Lee','Competitive enough to keep score, social enough to grab tacos after.'),
+  ('marcus','Marcus Chen','Weeknight runs, weekend pickup, and learning to love a close game.'),
+  ('taylor','Taylor Brooks','Looking for consistent games and good energy. Let''s make it a habit.'),
+  ('sam','Sam Rivera','Just moved to Provo and looking for a regular crew. Always down for one more game.'),
+  ('noor','Noor Haddad','3.5 DUPR and happy to drill dinks with anyone who wants to get better.'),
+  ('priya','Priya Nair','Former high school tennis player easing back in. Patient with beginners, happy to rally.'),
+  ('hannah','Hannah Kim','Grad student. Badminton is my stress relief and volleyball is my social life.'),
+  ('diego','Diego Alvarez','I organize a Sunday pickup game at North Park. We always need a few more.'),
+  ('eli','Eli Watson','Saturday morning runs at the Rec. Trying pickleball because my knees asked nicely.'),
+  ('chris','Chris Okafor','Captain of a very average rec kickball team. We bring snacks and good attitudes.');
+
+insert into profile_private (profile_id, birthday, cell_phone) values
+  ('me','2001-04-12','801-555-0100'),
+  ('jamie','2000-03-04','801-555-0101'),
+  ('marcus','2003-07-19','801-555-0102'),
+  ('taylor','1998-11-02','801-555-0103'),
+  ('sam','2002-01-27','801-555-0104'),
+  ('noor','1997-05-15','801-555-0105'),
+  ('priya','1999-09-08','801-555-0106'),
+  ('hannah','2004-02-21','801-555-0107'),
+  ('diego','2001-06-30','801-555-0108'),
+  ('eli','1995-12-11','801-555-0109'),
+  ('chris','2000-08-17','801-555-0110');
+
+-- When each player is free. Mirrors the avail arrays in app.js.
+insert into profile_availability (profile_id, slot) values
+  ('me','Tue eve'), ('me','Thu eve'), ('me','Sat am'),
+  ('jamie','Tue eve'), ('jamie','Thu eve'), ('jamie','Sat am'),
+  ('marcus','Mon eve'), ('marcus','Wed eve'), ('marcus','Sat pm'),
+  ('taylor','Thu eve'), ('taylor','Sat am'), ('taylor','Sun pm'),
+  ('sam','Tue eve'), ('sam','Sat am'),
+  ('noor','Tue eve'), ('noor','Thu eve'), ('noor','Sat am'),
+  ('priya','Wed eve'), ('priya','Sat am'),
+  ('hannah','Mon eve'), ('hannah','Thu eve'),
+  ('diego','Tue eve'), ('diego','Thu eve'), ('diego','Sun pm'),
+  ('eli','Sat am'), ('eli','Sat pm'),
+  ('chris','Fri eve'), ('chris','Sun pm');
 
 insert into profile_interest (user_id, interest_id, skill_level, start_date) values
   ('me','pickleball','Intermediate','2025-01-15'), ('me','volleyball','Casual','2025-03-01'), ('me','basketball','Casual','2025-03-01'),
