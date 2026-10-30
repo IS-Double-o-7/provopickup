@@ -421,7 +421,8 @@ const api = {
       const { data: choices, error: choicesError } = await db.from('choice')
         .select('swiped_on').eq('swiper', myId);
       if (choicesError) throw authError('Could not load your matching choices.', choicesError);
-      const excluded = new Set([myId, ...(choices || []).map(row => row.swiped_on)]);
+      // ME ('me') is the old seed placeholder for the signed-in player, named "You"; it is not a real candidate.
+      const excluded = new Set([myId, ME, ...(choices || []).map(row => row.swiped_on)]);
       const { data: profiles, error: profilesError } = await db.from('profile')
         .select('profile_id').neq('profile_id', myId);
       if (profilesError) throw authError('Could not load players for matching.', profilesError);
