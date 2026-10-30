@@ -110,7 +110,8 @@ const PEOPLE = [
   { id: 'eli', name: 'Eli Watson', age: 31, mi: 4.2, sports: [['basketball', 'Advanced'], ['pickleball', 'Beginner']], avail: ['Sat am', 'Sat pm'], court: 'rec', likesYou: true, bio: 'Saturday morning runs at the Rec. Trying pickleball because my knees asked nicely.' },
   { id: 'chris', name: 'Chris Okafor', age: 26, mi: 5.0, sports: [['kickball', 'Casual'], ['soccer', 'Casual']], avail: ['Fri eve', 'Sun pm'], court: 'northpark', likesYou: true, bio: 'Captain of a very average rec kickball team. We bring snacks and good attitudes.' },
 ];
-const person = id => PEOPLE.find(p => p.id === id);
+const dbPlayers = new Map();
+const person = id => dbPlayers.get(id) || PEOPLE.find(p => p.id === id);
 
 const CHALLENGES = [
   { id: 'invite', cat: 'Community', title: 'Invite someone new to play this week', body: 'Message one of your matches about a game. Your crew gets better when it gets bigger.', xp: 40, min: 2, auto: 'message' },
@@ -194,6 +195,59 @@ function profileFromRows(row, interests = [], avail = [], photos = []) {
     sports, avail, photo: photos[0]?.photo_file || '',
   };
 }
+function hasLiveAccount() {
+  const user = window.RallyAuth && window.RallyAuth.user();
+  return Boolean(user?.id && !user.demo && S().profile?.ownerId === user.id && S().profile?.id);
+}
+function requireProfileId() {
+  if (!hasLiveAccount()) throw authError('Sign in and finish your profile to use matching.');
+  return S().profile.id;
+}
+async function loadPlayerRows(profileIds) {
+  const ids = [...new Set(profileIds || [])].filter(Boolean);
+  if (!ids.length) return [];
+  const [profilesResult, interestsResult, availabilityResult, photosResult] = await Promise.all([
+    db.from('profile').select('profile_id,name,bio').in('profile_id', ids),
+    db.from('profile_interest').select('user_id,interest_id,skill_level').in('user_id', ids),
+    db.from('profile_availability').select('profile_id,slot').in('profile_id', ids),
+    db.from('photo').select('user_id,photo_file,display_order_id').in('user_id', ids).order('display_order_id', { ascending: true }),
+  ]);
+  for (const [result, message] of [
+    [profilesResult, 'Could not load player profiles.'],
+    [interestsResult, 'Could not load player sports and skill levels.'],
+    [availabilityResult, 'Could not load player availability.'],
+    [photosResult, 'Could not load player photos.'],
+  ]) if (result.error) throw authError(message, result.error);
+  const byOwner = rows => (rows || []).reduce((map, row) => {
+    const key = row.user_id || row.profile_id;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+    return map;
+  }, new Map());
+  const interestsByPlayer = byOwner(interestsResult.data);
+  const availabilityByPlayer = byOwner(availabilityResult.data);
+  const photosByPlayer = byOwner(photosResult.data);
+  const players = (profilesResult.data || []).map(row => {
+    const interests = (interestsByPlayer.get(row.profile_id) || []).filter(x =>
+      SPORTS.some(s => s.id === x.interest_id) && LEVELS.includes(x.skill_level));
+    const player = {
+      id: row.profile_id, name: row.name || '', bio: row.bio || '',
+      // Seed rows hold bare filenames, not URLs; show initials for those instead of a broken image.
+      photo: isPhotoUrl(photosByPlayer.get(row.profile_id)?.[0]?.photo_file) ? photosByPlayer.get(row.profile_id)[0].photo_file : '',
+      sports: interests.map(x => [x.interest_id, x.skill_level]),
+      avail: [...new Set((availabilityByPlayer.get(row.profile_id) || []).map(x => x.slot).filter(slot => Object.hasOwn(SLOTS, slot)))],
+    };
+    dbPlayers.set(player.id, player);
+    return player;
+  });
+  return players;
+}
+const isPhotoUrl = v => typeof v === 'string' && /^https?:\/\//.test(v);
+async function loadPlayersForIds(ids) {
+  const players = await loadPlayerRows(ids);
+  const byId = new Map(players.map(p => [p.id, p]));
+  return ids.map(id => byId.get(id)).filter(Boolean);
+}
 async function loadProfileFor(user) {
   const { data: profileId, error: profileError } = await db.rpc('current_profile_id');
   if (profileError) throw authError('Could not load your profile.', profileError);
@@ -256,12 +310,12 @@ function compat(p, me) {
     if (!best || pts > best.pts) best = { sp, lvl, gap, pts };
   }
   const shared = p.avail.filter(a => me.avail.includes(a));
-  score += Math.min(shared.length, 2) * 8 - p.mi * 2;
+  score += Math.min(shared.length, 2) * 8;
   score = Math.round(Math.max(52, Math.min(98, score)));
   let reason = best
     ? `You both play ${best.gap === 0 ? best.lvl.toLowerCase() + ' ' : ''}${sport(best.sp).name.toLowerCase()}`
     : `A chance to try ${sport(p.sports[0][0]).name.toLowerCase()}`;
-  reason += shared.length ? ` and are free ${SLOTS[shared[0]].toLowerCase()}.` : `, ${p.mi} mi from you.`;
+  reason += shared.length ? ` and are free ${SLOTS[shared[0]].toLowerCase()}.` : '.';
   return { score, reason, shared };
 }
 
@@ -362,6 +416,22 @@ const api = {
   },
 
   async deck(sportId = 'all') {
+    if (hasLiveAccount()) {
+      const myId = requireProfileId();
+      const { data: choices, error: choicesError } = await db.from('choice')
+        .select('swiped_on').eq('swiper', myId);
+      if (choicesError) throw authError('Could not load your matching choices.', choicesError);
+      const excluded = new Set([myId, ...(choices || []).map(row => row.swiped_on)]);
+      const { data: profiles, error: profilesError } = await db.from('profile')
+        .select('profile_id').neq('profile_id', myId);
+      if (profilesError) throw authError('Could not load players for matching.', profilesError);
+      const candidates = await loadPlayerRows((profiles || []).map(row => row.profile_id));
+      const mine = S().profile;
+      return candidates.filter(p => !excluded.has(p.id) && p.name && p.sports.length && p.avail.length)
+        .filter(p => sportId === 'all' || p.sports.some(([sp]) => sp === sportId))
+        .map(p => ({ ...p, ...compat(p, mine) }))
+        .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    }
     const s = S(), me = s.profile;
     return PEOPLE.filter(p => !s.swipes[p.id] && !s.matches.includes(p.id))
       .filter(p => sportId === 'all' || p.sports.some(([sp]) => sp === sportId))
@@ -369,6 +439,21 @@ const api = {
       .sort((a, b) => b.score - a.score);
   },
   async swipe(id, dir) {
+    if (hasLiveAccount()) {
+      const myId = requireProfileId();
+      if (!['like', 'pass'].includes(dir)) throw authError('Choose like or pass.');
+      const target = person(id);
+      if (!target || id === myId) throw authError('That player is no longer available. Refresh the deck and try again.');
+      const { error } = await db.from('choice').upsert({
+        swiper: myId, swiped_on: id, yes: dir === 'like', no: dir === 'pass',
+      }, { onConflict: 'swiper,swiped_on' });
+      if (error) throw authError('Your choice could not be saved. Please try again.', error);
+      const { data: matches, error: matchesError } = await db.rpc('my_matches');
+      if (matchesError) throw authError('Your choice was saved, but mutual matches could not be refreshed.', matchesError);
+      const matchIds = (matches || []).map(row => row.profile_id);
+      S().matches = matchIds; store.save();
+      return { matched: dir === 'like' && matchIds.includes(id), conv: null };
+    }
     const s = S(), p = person(id); s.swipes[id] = dir; let conv = null;
     if (dir === 'like' && p.likesYou) {
       s.matches.push(id);
@@ -377,10 +462,47 @@ const api = {
     }
     store.save(); return { matched: !!conv, conv };
   },
-  async undoSwipe(id) { delete S().swipes[id]; store.save(); },
-  async resetPasses() { const s = S(); for (const k in s.swipes) if (s.swipes[k] === 'pass') delete s.swipes[k]; store.save(); },
-  async likesSent() { const s = S(); return Object.keys(s.swipes).filter(id => s.swipes[id] === 'like' && !s.matches.includes(id)).map(person); },
-  async matches() { return S().matches.map(person); },
+  async undoSwipe(id) {
+    if (hasLiveAccount()) {
+      const { error } = await db.from('choice').delete().eq('swiper', requireProfileId()).eq('swiped_on', id);
+      if (error) throw authError('That choice could not be undone. Please try again.', error);
+      return;
+    }
+    delete S().swipes[id]; store.save();
+  },
+  async resetPasses() {
+    if (hasLiveAccount()) {
+      const { error } = await db.from('choice').delete().eq('swiper', requireProfileId()).eq('no', true);
+      if (error) throw authError('Passed players could not be restored. Please try again.', error);
+      return;
+    }
+    const s = S(); for (const k in s.swipes) if (s.swipes[k] === 'pass') delete s.swipes[k]; store.save();
+  },
+  async likesSent() {
+    if (hasLiveAccount()) {
+      const myId = requireProfileId();
+      const [{ data: choices, error: choicesError }, { data: matches, error: matchesError }] = await Promise.all([
+        db.from('choice').select('swiped_on').eq('swiper', myId).eq('yes', true),
+        db.rpc('my_matches'),
+      ]);
+      if (choicesError) throw authError('Could not load likes you sent.', choicesError);
+      if (matchesError) throw authError('Could not check which likes are mutual.', matchesError);
+      const matchedIds = new Set((matches || []).map(row => row.profile_id));
+      const ids = (choices || []).map(row => row.swiped_on).filter(id => !matchedIds.has(id));
+      return loadPlayersForIds(ids);
+    }
+    const s = S(); return Object.keys(s.swipes).filter(id => s.swipes[id] === 'like' && !s.matches.includes(id)).map(person);
+  },
+  async matches() {
+    if (hasLiveAccount()) {
+      const { data, error } = await db.rpc('my_matches');
+      if (error) throw authError('Could not load your matches.', error);
+      const ids = (data || []).map(row => row.profile_id);
+      S().matches = ids; store.save();
+      return loadPlayersForIds(ids);
+    }
+    return S().matches.map(person);
+  },
 
   async conversations() { return [...S().conversations].sort((a, b) => lastMsg(b).at - lastMsg(a).at); },
   async conversation(id) { return S().conversations.find(c => c.id === id) || null; },
@@ -527,7 +649,7 @@ function badges(past) {
 }
 
 function replyFor(text, p) {
-  const t = text.toLowerCase(), court = place(p.court).name;
+  const t = text.toLowerCase(), court = (place(p.court) || { name: 'the usual courts' }).name;
   const pick = a => a[Math.floor(Math.random() * a.length)];
   if (/put us down|added a game/.test(t)) return pick(['Perfect, it’s on my calendar too.', 'Locked in. See you there!']);
   if (/\b(mon|tue|wed|thu|fri|sat|sun)|tomorrow|tonight|\d/.test(t)) return pick([`That works for me. ${court}?`, 'Works for me. I’ll bring a ball.']);
@@ -657,18 +779,23 @@ function nextGameCard(g) {
 function miniCard(p) {
   const [sp, lvl] = p.sports[0];
   return `<button class="mini" data-action="play-person" data-id="${p.id}"><div class="art">${courtSVG(sp)}</div><div class="shade"></div>
-    <span class="pill ball">${p.score}% match</span>${avatar(p.name, 44)}
-    <strong>${esc(p.name)}, ${p.age}</strong><small>${sport(sp).name} · ${lvl} · ${p.mi} mi</small></button>`;
+    <span class="pill ball">${p.score}% match</span>${photoAvatar(p.photo, p.name, 44)}
+    <strong>${esc(p.name)}</strong><small>${sport(sp).name} · ${lvl}</small></button>`;
 }
 
 /* ---- Play ---- */
 V.play = async () => {
   const sf = S().ui.playSport;
-  let [deck, matches, pending] = await Promise.all([api.deck(sf), api.matches(), api.likesSent()]);
+  let deck, matches, pending;
+  try { [deck, matches, pending] = await Promise.all([api.deck(sf), api.matches(), api.likesSent()]); }
+  catch (error) {
+    view('play').innerHTML = `<header class="page-head"><div><p class="eyebrow">Find your people</p><h1>Play</h1></div></header><div class="card empty" role="alert"><h3>Matching could not load</h3><p class="muted">${esc(error.message || 'Check your connection and try again.')}</p><button class="btn sm" data-action="retry-play">Try again</button></div>`;
+    return;
+  }
   if (ui.focus) { const i = deck.findIndex(p => p.id === ui.focus); if (i > 0) deck.unshift(...deck.splice(i, 1)); ui.focus = null; }
   view('play').innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Find your people</p><h1>Play</h1>
-      <p class="sub">Drag a card right to like or left to pass. When you both like each other, a chat opens.</p></div></header>
+      <p class="sub">Drag a card right to like or left to pass. When you both like each other, you’ll see a mutual match.</p></div></header>
     ${sportChips('play-filter', sf)}
     <div class="play-layout block">
       <div>
@@ -678,11 +805,11 @@ V.play = async () => {
       </div>
       <aside class="stack">
         <div class="card"><h3>Your matches</h3>
-          ${matches.length ? matches.map(p => `<div class="list-row">${avatar(p.name, 36)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s]) => sport(s).name).join(' · ')}</small></div><button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button></div>`).join('') : '<p class="muted small" style="margin-top:6px">Mutual likes show up here.</p>'}
+          ${matches.length ? matches.map(p => `<div class="list-row">${photoAvatar(p.photo, p.name, 36)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s]) => sport(s).name).join(' · ')}</small></div>${hasLiveAccount() ? '<span class="pill good">Matched</span>' : `<button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button>`}</div>`).join('') : '<p class="muted small" style="margin-top:6px">Mutual likes show up here.</p>'}
         </div>
         <div class="card"><h3>Likes sent</h3>
-          <p class="muted small" style="margin:4px 0 10px">If they like you back, they’ll appear in Messages.</p>
-          ${pending.length ? `<div class="avatars">${pending.map(p => avatar(p.name, 36)).join('')}</div>` : '<p class="muted small">None waiting.</p>'}
+          <p class="muted small" style="margin:4px 0 10px">If they like you back, they’ll appear in Your matches.</p>
+          ${pending.length ? `<div class="avatars">${pending.map(p => photoAvatar(p.photo, p.name, 36)).join('')}</div>` : '<p class="muted small">None waiting.</p>'}
         </div>
       </aside>
     </div>`;
@@ -694,7 +821,7 @@ function playerCard(p, isTop) {
     <span class="pill ball compat">${p.score}% match</span>
     <span class="stamp like">LIKE</span><span class="stamp pass">PASS</span>
     <div class="pcard-body">
-      <div class="who">${avatar(p.name, 56)}<div class="min0"><h2>${esc(p.name)}, ${p.age}</h2><span class="mi">${p.mi} mi away · plays at ${esc(place(p.court).name)}</span></div></div>
+      <div class="who">${photoAvatar(p.photo, p.name, 56)}<div class="min0"><h2>${esc(p.name)}</h2></div></div>
       <p>${esc(p.bio)}</p>
       <div class="tags">${p.sports.map(([s, l]) => `<span class="tag">${sport(s).icon} ${sport(s).name} · ${l}</span>`).join('')}</div>
       <div class="tags">${p.avail.map(a => `<span class="tag soft">${esc(a)}</span>`).join('')}</div>
@@ -722,7 +849,13 @@ async function doSwipe(dir) {
   const id = card.dataset.id, p = person(id);
   card.style.setProperty(dir === 'like' ? '--like' : '--pass', 1);
   card.style.transform = `translate(${dir === 'like' ? 520 : -520}px,40px) rotate(${dir === 'like' ? 24 : -24}deg)`; card.style.opacity = '0';
-  const res = await api.swipe(id, dir);
+  let res;
+  try { res = await api.swipe(id, dir); }
+  catch (error) {
+    ui.swiping = false; card.style.transform = ''; card.style.opacity = ''; card.style.setProperty('--like', 0); card.style.setProperty('--pass', 0);
+    toast(error.message || 'Your choice could not be saved. Please try again.');
+    return;
+  }
   setTimeout(async () => {
     ui.swiping = false; await render();
     if (res.matched) openMatch(p, res.conv);
@@ -732,9 +865,9 @@ async function doSwipe(dir) {
 }
 function openMatch(p, conv) {
   openModal(`<div class="match-card"><p class="eyebrow">Mutual like</p><h2>It’s a match</h2>
-    <div class="match-avs">${photoAvatar(S().profile.photo, S().profile.name, 76)}${avatar(p.name, 76)}</div>
-    <p class="muted">You and ${esc(p.name.split(' ')[0])} both want to play. ${esc(p.name.split(' ')[0])} already sent you a message.</p>
-    <div class="row" style="justify-content:center"><button class="btn" data-action="open-conv" data-id="${conv.id}">Reply now</button><button class="btn ghost" data-action="close">Keep browsing</button></div></div>`);
+    <div class="match-avs">${photoAvatar(S().profile.photo, S().profile.name, 76)}${photoAvatar(p.photo, p.name, 76)}</div>
+    <p class="muted">You and ${esc(p.name.split(' ')[0])} both want to play.${conv ? ` ${esc(p.name.split(' ')[0])} already sent you a message.` : ''}</p>
+    <div class="row" style="justify-content:center">${conv ? `<button class="btn" data-action="open-conv" data-id="${conv.id}">Reply now</button>` : ''}<button class="btn ghost" data-action="close">Keep browsing</button></div></div>`);
 }
 
 /* ---- Messages ---- */
@@ -771,7 +904,7 @@ async function renderChat() {
     return sep + `<div class="bubble ${m.kind === 'game' ? 'game' : m.from}">${esc(m.text)}</div>`;
   }).join('');
   const shared = p.sports.find(([s]) => me.sports[s]);
-  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, `Meet at ${place(p.court).name}?`].filter(Boolean);
+  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, place(p.court) ? `Meet at ${place(p.court).name}?` : null].filter(Boolean);
   box.innerHTML = `
     <div class="chat-head">
       <button class="icon-btn back-btn" data-action="conv-back" aria-label="Back to conversations">${ICON.back}</button>
@@ -1148,8 +1281,9 @@ document.addEventListener('click', async e => {
     case 'pick-sport': saveUI('playSport', id); go('play'); break;
     case 'play-filter': saveUI('playSport', id); render(); break;
     case 'play-person': saveUI('playSport', 'all'); ui.focus = id; closeModal(); go('play'); break;
+    case 'retry-play': render(); break;
     case 'swipe': doSwipe(a.dataset.dir); break;
-    case 'reset-passes': await api.resetPasses(); render(); break;
+    case 'reset-passes': try { await api.resetPasses(); render(); } catch (error) { toast(error.message || 'Passed players could not be restored.'); } break;
 
     case 'open-conv': openConv(id); break;
     case 'open-conv-with': { const c = s.conversations.find(x => x.with === id); if (c) openConv(c.id); break; }

@@ -207,18 +207,19 @@ on their profile.
 - `auth.js` owns Supabase sign-up, sign-in, and sign-out. The profile adapter in `app.js`
   loads and saves the signed-in player's name, bio, sports/skill levels, availability,
   and photo. Photos are uploaded to the configured public-read Storage bucket and the
-  resulting URL is stored in `photo.photo_file`. Set `PROFILE_PHOTO_BUCKET` in
-  `config.js` to the bucket created by the database migration.
+  resulting URL is stored in `photo.photo_file`. The bucket is `profile-photos`.
 - The profile adapter resolves the signed-in player's row with the owner-scoped
   `current_profile_id()` function; it does not select `auth_uid` from public profile
   reads. It depends on the database migration that adds `profile.auth_uid`,
   `current_profile_id()`, `profile_availability`, and owner-write policies, plus the
   profile-photo Storage bucket and `photo` write policy. The repository's base schema
   does not include those changes yet, so profile persistence is not end-to-end until
-  the migration is merged and applied to Supabase. The existing sample calendar data
-  remains attached to the demo `me` profile; new accounts start with an empty calendar.
-- Other app data besides the calendar and profile is still local browser state or sample
-  data and is not yet scoped to a Supabase account.
+  the migration is merged and applied to Supabase. The matching adapter also depends on
+  `choice`, `profile_interest`, `profile_availability`, and the `my_matches()` RPC from
+  that migration. The existing sample calendar data remains attached to the demo `me`
+  profile; new accounts start with an empty calendar.
+- Other app data besides the calendar, profile and matching is still local browser state
+  or sample data and is not yet scoped to a Supabase account.
 
 ---
 
@@ -272,13 +273,12 @@ Honest scope: this milestone moved **one** feature to the database.
 |---|---|
 | **Calendar — book, view and cancel a game** | **Supabase Postgres** |
 | Stats and streaks | Supabase Postgres (computed from the same events) |
-| Profile, swiping, matches, messages, reels, challenges | Still `localStorage` |
+| Profile and matching adapters | Supabase client code is on task branches; end-to-end use awaits the auth/profile/matching migration and its privacy review |
+| Messages, reels and challenges | Still `localStorage` or sample data |
 
-The tables for the other features (`profile`, `choice`, `messages`, `photo`,
-`reporting`, `profile_interest`) are built and seeded with sample data — the screens
-just have not been pointed at them yet. Every one of those screens already goes through
-the async `api` object in section 3 of `app.js`, so moving each one over is the same
-small change we made for the calendar.
+The tables for messages, reels and challenges are not yet connected to authenticated
+accounts. Profile and matching adapters use the agreed database contract but require
+the migration to be merged and applied before they can work end to end.
 
 ---
 
