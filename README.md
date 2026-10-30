@@ -204,9 +204,21 @@ on their profile.
   name, at least one sport with a skill level, an optional bio (up to 300 characters),
   and at least one time they are usually free. Photos are cropped to a 320px square in
   the browser. Players can change all of this later from **Your profile**.
-- Sign-in is front-end only so far: the `profile` table is not yet linked to the signed-in
-  account (the profile, photo included, is saved through `api.saveProfile`, which still
-  writes to this browser), and app data other than the calendar is still kept per browser, not per account.
+- `auth.js` owns Supabase sign-up, sign-in, and sign-out. The profile adapter in `app.js`
+  loads and saves the signed-in player's name, bio, sports/skill levels, availability,
+  and photo. Photos are uploaded to the configured public-read Storage bucket and the
+  resulting URL is stored in `photo.photo_file`. Set `PROFILE_PHOTO_BUCKET` in
+  `config.js` to the bucket created by the database migration.
+- The profile adapter resolves the signed-in player's row with the owner-scoped
+  `current_profile_id()` function; it does not select `auth_uid` from public profile
+  reads. It depends on the database migration that adds `profile.auth_uid`,
+  `current_profile_id()`, `profile_availability`, and owner-write policies, plus the
+  profile-photo Storage bucket and `photo` write policy. The repository's base schema
+  does not include those changes yet, so profile persistence is not end-to-end until
+  the migration is merged and applied to Supabase. The existing sample calendar data
+  remains attached to the demo `me` profile; new accounts start with an empty calendar.
+- Other app data besides the calendar and profile is still local browser state or sample
+  data and is not yet scoped to a Supabase account.
 
 ---
 

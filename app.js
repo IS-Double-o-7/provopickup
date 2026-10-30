@@ -186,6 +186,58 @@ const S = () => store.get();
 // auth.js creates the client so the login screen and the app share one session.
 const db = window.rallyDb || window.supabase.createClient(RALLY_CONFIG.SUPABASE_URL, RALLY_CONFIG.SUPABASE_ANON_KEY);
 const ME = 'me';
+const authError = (message, cause) => Object.assign(new Error(message), { cause });
+function profileFromRows(row, interests = [], avail = [], photos = []) {
+  const sports = Object.fromEntries((interests || []).map(x => [x.interest_id, x.skill_level]).filter(([id, level]) => id && level));
+  return {
+    id: row.profile_id, ownerId: row.auth_uid || null, name: row.name || '', bio: row.bio || '',
+    sports, avail, photo: photos[0]?.photo_file || '',
+  };
+}
+async function loadProfileFor(user) {
+  const { data: profileId, error: profileError } = await db.rpc('current_profile_id');
+  if (profileError) throw authError('Could not load your profile.', profileError);
+  if (!profileId) return null;
+  const { data: row, error: rowError } = await db.from('profile')
+    .select('profile_id,name,bio').eq('profile_id', profileId).maybeSingle();
+  if (rowError) throw authError('Could not load your profile.', rowError);
+  if (!row) return null;
+  const [interestsResult, availabilityResult, photosResult] = await Promise.all([
+    db.from('profile_interest').select('interest_id,skill_level').eq('user_id', row.profile_id),
+    db.from('profile_availability').select('slot').eq('profile_id', row.profile_id),
+    db.from('photo').select('photo_file,display_order_id').eq('user_id', row.profile_id).order('display_order_id', { ascending: true }),
+  ]);
+  const { data: interests, error: interestsError } = interestsResult;
+  const { data: availability, error: availabilityError } = availabilityResult;
+  const { data: photos, error: photosError } = photosResult;
+  if (interestsError) throw authError('Could not load your sports and skill levels.', interestsError);
+  if (availabilityError) throw authError('Could not load your availability.', availabilityError);
+  if (photosError) throw authError('Could not load your profile photo.', photosError);
+  return profileFromRows({ ...row, auth_uid: user.id }, interests, (availability || []).map(x => x.slot), photos || []);
+}
+async function persistProfilePhoto(user, profileId, photo) {
+  if (!photo) throw authError('Choose a profile photo before saving.');
+  let photoUrl = photo;
+  if (photo.startsWith('data:image/')) {
+    const bucketName = RALLY_CONFIG.PROFILE_PHOTO_BUCKET || 'profile-photos';
+    if (!bucketName || bucketName.startsWith('YOUR-')) throw authError('Profile photo storage is not configured yet.');
+    const blob = await (await fetch(photo)).blob();
+    const path = `${user.id}/profile.jpg`;
+    const bucket = db.storage.from(bucketName);
+    const { error: uploadError } = await bucket.upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (uploadError) throw authError('Your profile fields were saved, but your photo could not be uploaded.', uploadError);
+    photoUrl = `${bucket.getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
+  }
+  const { data: existing, error: readError } = await db.from('photo').select('photo_id')
+    .eq('user_id', profileId).order('display_order_id', { ascending: true }).limit(1);
+  if (readError) throw authError('Your profile fields were saved, but your photo could not be checked.', readError);
+  const photoRow = { user_id: profileId, photo_file: photoUrl, display_order_id: 1 };
+  const result = existing?.length
+    ? await db.from('photo').update({ photo_file: photoUrl, display_order_id: 1 }).eq('photo_id', existing[0].photo_id)
+    : await db.from('photo').insert(photoRow);
+  if (result.error) throw authError('Your profile fields were saved, but your photo could not be saved.', result.error);
+  return photoUrl;
+}
 const rowToGame = r => ({
   id: r.event_id, sport: r.interest_id, place: r.venue_id,
   date: r.event_date, time: String(r.event_time).slice(0, 5),
@@ -233,8 +285,81 @@ function completeToday() {
 }
 
 const api = {
-  async profile() { return S().profile; },
-  async saveProfile(p) { S().profile = p; store.save(); return p; },
+  // auth.js owns sign-up, sign-in and sign-out. These methods persist the
+  // signed-in player's profile against Jordan's auth_uid/profile_id contract.
+  async profile() {
+    const user = window.RallyAuth && window.RallyAuth.user();
+    if (!user?.id) throw authError('Sign in to load your profile.');
+    const profile = (await loadProfileFor(user)) || {
+      id: null, ownerId: null, name: user.user_metadata?.name || '', bio: '', sports: {}, avail: [], photo: '',
+    };
+    S().profile = profile; store.save();
+    return profile;
+  },
+  async saveProfile(p) {
+    const user = window.RallyAuth && window.RallyAuth.user();
+    if (!user?.id) throw authError('Sign in to save your profile.');
+    if (p.ownerId && p.ownerId !== user.id) throw authError('You can only save your own profile.');
+    const name = String(p.name || '').trim();
+    const bio = String(p.bio || '').trim();
+    const profileFields = { name, bio };
+    if (!name || name.length > 40) throw authError('Enter a first name with no more than 40 characters.');
+    if (bio.length > BIO_MAX) throw authError(`Keep your bio to ${BIO_MAX} characters or fewer.`);
+    if (!p.photo) throw authError('Choose a profile photo before saving.');
+    const wanted = Object.entries(p.sports || {}).filter(([id, level]) => SPORTS.some(s => s.id === id) && LEVELS.includes(level));
+    if (!wanted.length) throw authError('Choose at least one sport and skill level.');
+    const wantedSlots = [...new Set((p.avail || []).filter(slot => Object.hasOwn(SLOTS, slot)))];
+    if (!wantedSlots.length) throw authError('Choose at least one time you are usually free.');
+    const { data: existingProfileId, error: profileReadError } = await db.rpc('current_profile_id');
+    if (profileReadError) throw authError('Could not check your profile.', profileReadError);
+    let profileId = existingProfileId;
+    if (!profileId) {
+      const { data, error } = await db.from('profile')
+        .insert({ profile_id: user.id, auth_uid: user.id, ...profileFields })
+        .select('profile_id').single();
+      if (error) throw authError('Your profile could not be created.', error);
+      profileId = data.profile_id;
+    } else {
+      const { error } = await db.from('profile').update(profileFields).eq('profile_id', profileId);
+      if (error) throw authError('Could not save your name and bio.', error);
+    }
+
+    const { data: current, error: currentError } = await db.from('profile_interest').select('interest_id').eq('user_id', profileId);
+    if (currentError) throw authError('Could not update your sports and skill levels.', currentError);
+    const currentIds = new Set((current || []).map(x => x.interest_id));
+    const wantedIds = new Set(wanted.map(([id]) => id));
+    const removed = [...currentIds].filter(id => !wantedIds.has(id));
+    if (removed.length) {
+      const { error } = await db.from('profile_interest').delete().eq('user_id', profileId).in('interest_id', removed);
+      if (error) throw authError('Your profile name was saved, but some sports could not be removed.', error);
+    }
+    for (const [interest_id, skill_level] of wanted) {
+      const { error } = await db.from('profile_interest').upsert({ user_id: profileId, interest_id, skill_level }, { onConflict: 'user_id,interest_id' });
+      if (error) throw authError('Your profile was saved, but some sports or skill levels could not be saved.', error);
+    }
+
+    const { data: currentAvailability, error: availabilityReadError } = await db.from('profile_availability')
+      .select('slot').eq('profile_id', profileId);
+    if (availabilityReadError) throw authError('Your profile and sports were saved, but availability could not be read.', availabilityReadError);
+    const currentSlots = new Set((currentAvailability || []).map(row => row.slot));
+    const wantedSlotSet = new Set(wantedSlots);
+    const removedSlots = [...currentSlots].filter(slot => !wantedSlotSet.has(slot));
+    if (removedSlots.length) {
+      const { error } = await db.from('profile_availability').delete().eq('profile_id', profileId).in('slot', removedSlots);
+      if (error) throw authError('Your profile and sports were saved, but some availability could not be removed.', error);
+    }
+    const newSlots = wantedSlots.filter(slot => !currentSlots.has(slot));
+    if (newSlots.length) {
+      const { error } = await db.from('profile_availability').insert(newSlots.map(slot => ({ profile_id: profileId, slot })));
+      if (error) throw authError('Your profile and sports were saved, but availability could not be saved.', error);
+    }
+
+    const photoUrl = await persistProfilePhoto(user, profileId, p.photo);
+
+    const saved = { ...p, ...profileFields, id: profileId, ownerId: user.id, photo: photoUrl, sports: Object.fromEntries(wanted), avail: wantedSlots };
+    S().profile = saved; store.save();
+    return saved;
+  },
 
   async deck(sportId = 'all') {
     const s = S(), me = s.profile;
@@ -927,7 +1052,12 @@ function loadPhoto(file) {
 }
 
 /* ---- Profile setup after sign-up ---- */
-const needsProfile = user => user && !user.demo && S().profile.ownerId !== user.id;
+const needsProfile = user => {
+  if (!user || user.demo) return false;
+  const p = S().profile;
+  return p.ownerId !== user.id || !String(p.name || '').trim() || !p.photo ||
+    !Object.keys(p.sports || {}).length || !Array.isArray(p.avail) || !p.avail.length;
+};
 function showOnboarding(user) {
   const p = S().profile, mine = p.ownerId === user.id;
   pendingPhoto.o = mine ? p.photo || '' : '';
@@ -957,8 +1087,11 @@ function finishOnboarding() {
   startApp();
 }
 
-function openProfile() {
-  const p = S().profile; ui.resetArmed = false; pendingPhoto.p = p.photo || '';
+async function openProfile() {
+  let p;
+  try { p = await api.profile(); }
+  catch (error) { return toast(error.message || 'Could not load your profile. Please try again.'); }
+  ui.resetArmed = false; pendingPhoto.p = p.photo || '';
   openModal(`${modalHead('Your profile', 'How you play', 'Matches and suggestions use your sports, levels and free times.')}
     <form class="form" id="profileForm">
       ${photoField('p', p.photo || '', false)}
@@ -1005,7 +1138,8 @@ document.addEventListener('click', async e => {
   switch (a.dataset.action) {
     case 'close': closeModal(); break;
     case 'more': openSheet(); break;
-    case 'open-profile': closeSheet(); openProfile(); break;
+    case 'open-profile': closeSheet(); await openProfile(); break;
+    case 'retry-profile': { const user = window.RallyAuth && window.RallyAuth.user(); if (user) await boot(user); break; }
     case 'reset-demo':
       if (!ui.resetArmed) { ui.resetArmed = true; a.textContent = 'Tap again to erase your changes'; setTimeout(() => { ui.resetArmed = false; if (a.isConnected) a.textContent = 'Reset all app data'; }, 4000); break; }
       { const keep = S().profile; await api.reset(); if (keep.ownerId) { S().profile = keep; store.save(); } } Object.assign(ui, { conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, typing: {} });
@@ -1146,6 +1280,16 @@ function startApp() {
 }
 // Nothing renders until auth.js reports a signed-in player, and a new
 // player sets up their profile before seeing the app.
-function boot(user) { if (needsProfile(user)) showOnboarding(user); else startApp(); }
+async function boot(user) {
+  try { await api.profile(); }
+  catch (error) {
+    const el = $('#onboard');
+    $('#app').hidden = true;
+    el.hidden = false;
+    el.innerHTML = `<div class="onboard-inner"><h1>Could not load your profile</h1><p class="auth-msg" role="alert">${esc(error.message || 'Please try again.')}</p><div class="row"><button class="btn" type="button" data-action="retry-profile">Try again</button><button class="btn ghost" type="button" data-auth="sign-out">Log out</button></div></div>`;
+    return;
+  }
+  if (needsProfile(user)) showOnboarding(user); else startApp();
+}
 if (window.RallyAuth) window.RallyAuth.whenSignedIn(boot); else startApp();
 })();
