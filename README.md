@@ -3,6 +3,8 @@
 A sports-matching app for finding people to play with around Provo: swipe to match
 players, chat, plan games, browse courts and reels, and track daily challenges and stats.
 
+**Live site:** <https://is-double-o-7.github.io/provopickup/> (GitHub Pages, deployed from `main`)
+
 ---
 
 ## App Summary
@@ -21,6 +23,58 @@ tracks the courts and fields around Provo, daily challenges to keep people playi
 stats so you can see your streak and how many new people you have met. The result is
 that a stranger in Provo can go from "I want to play pickleball" to a scheduled game
 with a real person in a few minutes.
+
+---
+
+## Behavioral Requirements
+
+What a user can do, and whether it works today. **Complete** means it was exercised end
+to end (user → frontend → Supabase → back) and the result was checked; the Evidence
+column says how. Anything that has not been checked that way is **Not complete**, even if
+the code exists. Last reviewed October 30, 2026 against `main` and the live site.
+
+### Login and profile
+
+| # | Requirement | Status | Evidence |
+|---|---|---|---|
+| L1 | A visitor sees the Log in / Sign up page before anything else, until they are signed in | Complete | Live site; responsive check at 8 screen sizes (#16) |
+| L2 | A new user can create an account with an email and a password (6+ characters) | Complete | A real account was created on the live site; it exists in Supabase Auth |
+| L3 | A new account must confirm its email before first log-in, and the link returns to the site | Not complete | Confirmation is on in Supabase; where the link lands from the live site has not been checked |
+| L4 | A returning user can log in, and stays signed in after a reload | Complete | Live site, Brook's account (Oct 30) |
+| L5 | A new user must create a profile before using the app: photo, first name, at least one sport with a skill level, at least one availability slot; bio optional | Complete | Live: the account's profile, sport, availability and photo rows exist in Supabase; photo loads from Storage (200, image/jpeg) |
+| L6 | A user who already has a profile goes straight to the app on log-in | Complete | Live site, Brook's account; 4 login cases tested in #13 |
+| L7 | A user can edit their photo, name, sports, bio and availability from **Your profile** | Not complete | Works against a stand-in database (#5, #9); not yet checked live |
+| L8 | Log out always returns to the login page | Not complete | Tested against a stand-in, including a failed sign-out request (#15); not yet checked live |
+| L9 | Phone numbers and birthdays are visible only to their owner | Complete | Live database: a signed-out client reads 0 rows from `profile_private` and cannot read `auth_uid` (#8, #11) |
+| L10 | A user cannot create or change another user's profile | Complete | Live database: an update against another profile changes 0 rows; a second profile per account is rejected (#7) |
+
+### Matching (Play page)
+
+| # | Requirement | Status | Evidence |
+|---|---|---|---|
+| M1 | The deck shows other players with name, photo (or initials), bio, sports with levels, and availability; no age, distance or home court | Complete | Live site, Brook's account |
+| M2 | A user never sees themselves or the demo "You" profile in the deck | Complete | Fixed in #17 and confirmed live |
+| M3 | Like and pass are saved, and that player does not come back after a reload | Complete | Live: 10 likes and a pass saved as `choice` rows |
+| M4 | **Undo** right after a pass brings that player back | Complete | Live: the pass row was deleted and the card returned |
+| M5 | **Review passed players** brings back everyone passed, and keeps likes | Complete | Live: passes deleted, all 10 likes kept |
+| M6 | A match appears only when both players like each other, and shows in **Your matches** | Not complete | Verified on the live database (#7) and against a stand-in with two accounts (#10); not yet seen in the live app, which needs a second real account |
+| M7 | A player cannot see who has liked them until it is a match | Complete | Live database: another account reads 0 rows from `choice` (#7) |
+| M8 | Filter the deck by sport | Not complete | In the UI; not yet checked against live data |
+
+### Other pages and course requirements
+
+| # | Requirement | Status | Evidence |
+|---|---|---|---|
+| C1 | Book, view and cancel a game on the Calendar, saved in Postgres | Complete | Calendar vertical slice (#1) |
+| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Games are still hosted by the demo `me` profile and every account sees the same calendar |
+| X1 | Message a match (chat saved in the database) | Not complete | Messages are sample data in the browser; moved to Sprint 2 |
+| X2 | Courts and Maps pages read venues from the database | Not complete | Still the hardcoded `PLACES` list |
+| X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules found no issues on login, sign-up, profile setup, Your profile and Play after #16 |
+| X4 | Every page is responsive on desktop and mobile | Not complete | Login, sign-up and profile setup checked at 8 sizes and Play at desktop and phone (#16); other pages not checked |
+| X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
+| X6 | The four Key Results update automatically from user activity | Not complete | Not started |
+| X7 | Admin portal | Not complete | Not started |
+| X8 | The site is live at a real URL anyone can open | Complete | <https://is-double-o-7.github.io/provopickup/>; redeploys on every merge to `main` |
 
 ---
 
@@ -107,7 +161,7 @@ The source is `docs/erd.svg`.
 | Backend / API | Supabase (backend as a service) | Supabase hands us a REST API over our tables automatically, so there is no server code to write or host. |
 | Database | Postgres, hosted by Supabase (free tier) | Real SQL with real foreign keys, so the ERD maps to actual constraints instead of being decorative. The table editor also lets every teammate *see* the rows, which made debugging much easier. |
 | Security | Postgres row-level security (RLS) | Controls exactly what the public key is allowed to read and write. |
-| Hosting | Opened locally, or any static file host | The app is four static files. |
+| Hosting | GitHub Pages, deployed from `main` | The app is static files, so there is nothing to build; every merge to `main` is live at <https://is-double-o-7.github.io/provopickup/> within a minute or two. |
 
 **Why this stack fits our team.** Nobody on the team is a full-time backend developer, and
 the assignment is graded on one button working end to end, not on infrastructure. A
@@ -122,12 +176,15 @@ modelling part — we just skipped the part where we maintain a server.
 `config.js` is committed to the repository and contains the Supabase **publishable
 (anon) key**. That is intentional and is how Supabase is designed to work: the
 publishable key is meant to ship in frontend code, and it can only do what our
-row-level security policies allow. Ours allow reading reference data and
-creating/reading/deleting rows in `event` and `event_attendee` — nothing else.
+row-level security policies allow. Anyone may read the public profile columns
+(`profile_id`, `name`, `bio`), sports, availability, photos and reference data. A
+signed-in player may write only their own profile, sports, availability, photo and
+swipes. Private contact details, swipes, messages and reports are readable only by
+their owner. The calendar's `event` and `event_attendee` still allow anonymous
+insert and delete from the original vertical slice.
 
 The **`service_role` key**, which bypasses all security, is never committed and is not
-in this repository. `.env` is listed in `.gitignore`. If you fork this project for real
-use, add sign-in and tighten the RLS policies from `true` to `auth.uid()` checks.
+in this repository. `.env` is listed in `.gitignore`.
 
 ---
 
@@ -138,8 +195,8 @@ fine, and you probably already have one).
 
 1. **Get the code.**
    ```
-   git clone https://github.com/byeomans3/provo-pickup.git
-   cd provo-pickup
+   git clone https://github.com/IS-Double-o-7/provopickup.git
+   cd provopickup
    ```
 
 2. **Check the config.** `config.js` is already in the repo with our class project's
@@ -163,9 +220,10 @@ fine, and you probably already have one).
    npx serve .
    ```
 
-4. **Open it.** Go to <http://localhost:8000>. You should land on the Home screen with
-   players, courts and a calendar that already has games on it. Those games are coming
-   from the database, not from your browser.
+4. **Open it.** Go to <http://localhost:8000>. You land on the Log in / Sign up page;
+   after signing in (and setting up your profile the first time) you reach the Home
+   screen. You don't need to run it locally just to use or test the app: the live site
+   is <https://is-double-o-7.github.io/provopickup/>.
 
 **If the calendar is empty** and you see "Could not reach the database", the Supabase
 project is paused (free-tier projects sleep after inactivity). Open the project in the
@@ -204,22 +262,21 @@ on their profile.
   name, at least one sport with a skill level, an optional bio (up to 300 characters),
   and at least one time they are usually free. Photos are cropped to a 320px square in
   the browser. Players can change all of this later from **Your profile**.
-- `auth.js` owns Supabase sign-up, sign-in, and sign-out. The profile adapter in `app.js`
-  loads and saves the signed-in player's name, bio, sports/skill levels, availability,
-  and photo. Photos are uploaded to the configured public-read Storage bucket and the
-  resulting URL is stored in `photo.photo_file`. The bucket is `profile-photos`.
-- The profile adapter resolves the signed-in player's row with the owner-scoped
-  `current_profile_id()` function; it does not select `auth_uid` from public profile
-  reads. It depends on the database migration that adds `profile.auth_uid`,
-  `current_profile_id()`, `profile_availability`, and owner-write policies, plus the
-  profile-photo Storage bucket and `photo` write policy. The repository's base schema
-  does not include those changes yet, so profile persistence is not end-to-end until
-  the migration is merged and applied to Supabase. The matching adapter also depends on
-  `choice`, `profile_interest`, `profile_availability`, and the `my_matches()` RPC from
-  that migration. The existing sample calendar data remains attached to the demo `me`
-  profile; new accounts start with an empty calendar.
-- Other app data besides the calendar, profile and matching is still local browser state
-  or sample data and is not yet scoped to a Supabase account.
+- **A player who already has a profile goes straight to the app** on log-in. A profile
+  that was saved only in the browser (before profiles moved to Supabase) is copied to
+  the database automatically, and a profile missing a field shows a **Finish profile**
+  prompt instead of the setup page.
+- **Log out** is in **Your profile** and always returns to the login page, even if the
+  sign-out request to Supabase fails.
+- `auth.js` owns Supabase sign-up, sign-in and sign-out. The profile adapter in `app.js`
+  loads and saves the signed-in player's name, bio, sports and skill levels,
+  availability and photo. Photos are uploaded to the public-read Storage bucket
+  `profile-photos` at `<auth.uid()>/profile.jpg`, and the URL is stored in
+  `photo.photo_file`.
+- The adapter finds the signed-in player's row with `current_profile_id()`; it never
+  selects `auth_uid`, which signed-out clients cannot read. Migrations 001 (#8) and the
+  column-privacy fix (#11) are applied to the live Supabase project.
+- The sample calendar data stays attached to the demo `me` profile.
 
 ---
 
@@ -267,18 +324,16 @@ Postgres (and the toast's **Undo** puts it back).
 
 ## What is live and what is not
 
-Honest scope: this milestone moved **one** feature to the database.
-
 | Feature | Where its data lives |
 |---|---|
-| **Calendar — book, view and cancel a game** | **Supabase Postgres** |
-| Stats and streaks | Supabase Postgres (computed from the same events) |
-| Profile and matching adapters | Supabase client code is on task branches; end-to-end use awaits the auth/profile/matching migration and its privacy review |
-| Messages, reels and challenges | Still `localStorage` or sample data |
+| **Accounts, sign-in and sign-out** | **Supabase Auth** |
+| **Profile: name, bio, sports and levels, availability, photo** | **Supabase Postgres and Storage**, one profile per account |
+| **Play: deck, likes, passes, undo, matches** | **Supabase Postgres** (`choice`, `my_matches()`) |
+| **Calendar: book, view and cancel a game** | **Supabase Postgres**, not yet tied to the signed-in account |
+| Stats and streaks | Computed from the same calendar events |
+| Messages, reels, challenges, courts and maps | Still browser `localStorage` or sample data |
 
-The tables for messages, reels and challenges are not yet connected to authenticated
-accounts. Profile and matching adapters use the agreed database contract but require
-the migration to be merged and applied before they can work end to end.
+See **Behavioral Requirements** above for what has been checked end to end.
 
 ---
 
@@ -310,6 +365,6 @@ the migration to be merged and applied before they can work end to end.
 ## Notes
 
 - Players, courts and community numbers are sample data.
-- Avatars are initials and reel covers are drawn court illustrations; swap in real photos
-  and video once uploads exist.
+- Players' profile photos are real uploads. Demo players without a photo show initials,
+  and reel covers are still drawn court illustrations.
 - Fonts load from Google Fonts and fall back to system fonts offline.
