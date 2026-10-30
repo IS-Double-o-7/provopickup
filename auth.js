@@ -141,9 +141,14 @@ $('#authTabs').addEventListener('keydown', e => {
 });
 
 async function signOut() {
-  await db.auth.signOut();
-  // Reload so no screen from the previous session stays in memory.
-  location.reload();
+  // Always end the session in this browser, even if Supabase can't be reached
+  // or the login has already expired; otherwise the player stays signed in.
+  let failed = false;
+  try { const { error } = await db.auth.signOut(); failed = Boolean(error); } catch (e) { failed = true; }
+  if (failed) { try { await db.auth.signOut({ scope: 'local' }); } catch (e) { /* cleared below */ } }
+  try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token$/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* storage blocked */ }
+  // Load a fresh login page (dropping any #route) so nothing from the old session stays on screen.
+  location.replace(location.pathname + location.search);
 }
 
 /* ---- public API for app.js ---- */
