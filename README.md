@@ -82,28 +82,21 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 
 ![Rally Provo system architecture](docs/architecture.png)
 
-How data moves through both parts of the product. Solid lines are live today; dashed
-lines are planned and not built yet. Each arrow is labeled with the data it carries.
-The source is `docs/architecture.svg`.
+Solid lines are live; dashed lines are planned. Each arrow is labeled with the data it
+carries. The source is `docs/architecture.svg`.
 
-- **Customer-facing app (live).** The web app is static HTML, CSS and JavaScript. It is
-  built from the GitHub repository and served by GitHub Pages, and runs in the player's
-  browser. It talks to **Supabase**: Auth for accounts and session tokens, Postgres for
-  profiles, swipes, matches and games (row-level security on every table), and Storage
-  for profile photos.
-- **Admin portal (planned).** Moderators use HTML/CSS pages served by an
-  **Express/Node server on AWS**, which keeps its own database (AWS RDS) for admin
-  accounts and an audit log.
-- **Where the two apps connect.** The admin server reads reports and player accounts from
-  the same Supabase database and can hide or restore a profile. It uses a server-only key
-  that never reaches a browser. This is a proposal; the admin portal's scope still needs
-  team approval.
-- **External services.** Live: jsDelivr (supabase-js library), Google Fonts, Supabase's
-  email sender (sign-up confirmation). Planned: the **AI workflow automation**. When a
-  game is booked, a Supabase Edge Function sends the game details to an AI model API,
-  which writes the invite and picks the sport channel, and the function posts it to
-  **Discord** through an incoming webhook. This is the team's leading candidate and is
-  not yet approved.
+- **Customer-facing app (live):** a static HTML/CSS/JavaScript web app hosted on GitHub
+  Pages, using Supabase for logins (Auth), data (Postgres with row-level security) and
+  profile photos (Storage).
+- **Admin portal (planned):** admin pages (HTML/CSS) and an Express/Node server with its
+  own database (RDS), hosted on AWS.
+- **Where the apps connect (proposed):** the admin server reads reports and player
+  accounts from Supabase and can hide or restore profiles, using a server-only key.
+- **External services:** jsDelivr and Google Fonts (code library and fonts) and
+  Supabase's email sender (confirmation link) are live. The AI workflow is planned: a
+  Supabase Edge Function sends each new game to an AI model API, which writes an invite,
+  and the function posts it to Discord. This is the team's leading candidate, not yet
+  approved.
 
 ---
 
