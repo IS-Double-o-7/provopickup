@@ -179,7 +179,8 @@ publishable key is meant to ship in frontend code, and it can only do what our
 row-level security policies allow. Anyone may read the public profile columns
 (`profile_id`, `name`, `bio`), sports, availability, photos and reference data. A
 signed-in player may write only their own profile, sports, availability, photo and
-swipes. Private contact details, swipes, messages and reports are readable only by
+swipes, and may send a message only as themselves and only to a confirmed mutual
+match. Private contact details, swipes, messages and reports are readable only by
 their owner. The calendar's `event` and `event_attendee` still allow anonymous
 insert and delete from the original vertical slice.
 
