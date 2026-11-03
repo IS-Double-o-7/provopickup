@@ -997,9 +997,14 @@ V.calendar = async () => {
   all.forEach(g => (byDate[g.date] = byDate[g.date] || []).push(g));
   const tk = todayISO(), sel = ui.selDate, selGames = byDate[sel] || [];
   const upcoming = all.filter(g => g.date >= tk).slice(0, 5);
+  const monthStart = iso(m), monthEnd = iso(new Date(m.getFullYear(), m.getMonth() + 1, 0));
+  const monthGames = all.filter(g => g.date >= monthStart && g.date <= monthEnd);
+  const monthSports = [...new Set(monthGames.map(g => g.sport))];
   const cells = Array.from({ length: 42 }, (_, i) => {
     const d = addDays(start, i), k = iso(d), gs = byDate[k] || [];
-    return `<button class="cal-day ${d.getMonth() !== m.getMonth() ? 'out' : ''} ${k === tk ? 'today' : ''} ${k === sel ? 'sel' : ''}" data-action="cal-day" data-id="${k}" aria-label="${fmtDay(k)}${gs.length ? ', ' + plural(gs.length, 'game') : ''}" aria-pressed="${k === sel}">${d.getDate()}<span class="cal-dots">${gs.slice(0, 3).map(g => `<i style="background:${ART[g.sport][0]}"></i>`).join('')}</span></button>`;
+    const sports = [...new Set(gs.map(g => sport(g.sport).name))];
+    const description = gs.length ? `, ${plural(gs.length, 'game')}${sports.length ? `: ${sports.join(', ')}` : ''}` : ', no games';
+    return `<button type="button" class="cal-day ${d.getMonth() !== m.getMonth() ? 'out' : ''} ${k === tk ? 'today' : ''} ${k === sel ? 'sel' : ''}" data-action="cal-day" data-id="${k}" aria-label="${fmtLong(d)}${description}" ${k === tk ? 'aria-current="date"' : ''} aria-pressed="${k === sel}">${d.getDate()}<span class="cal-dots" aria-hidden="true">${gs.slice(0, 3).map(g => `<i style="background:${ART[g.sport]?.[0] || 'var(--court)'}"></i>`).join('')}</span></button>`;
   }).join('');
   view('calendar').innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Your schedule</p><h1>Calendar</h1>
@@ -1007,14 +1012,15 @@ V.calendar = async () => {
       <button class="btn" data-action="add-game" data-date="${sel}">${ICON.plus} Add a game</button></header>
     <div class="cal-layout">
       <div class="card">
-        <div class="between"><h2>${m.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2>
+        <div class="between cal-month-head"><div><h2 id="calendarMonth" aria-live="polite">${m.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><p class="muted small">${plural(monthGames.length, 'game')} this month</p></div>
           <div class="row"><button class="btn ghost sm" data-action="cal-today">Today</button><button class="icon-btn" data-action="cal-prev" aria-label="Previous month">${ICON.left}</button><button class="icon-btn" data-action="cal-next" aria-label="Next month">${ICON.right}</button></div></div>
-        <div class="cal-grid">${['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => `<span class="cal-dow">${d}</span>`).join('')}${cells}</div>
+        <div class="cal-grid" role="group" aria-label="Calendar dates for ${m.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}">${[['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday'], ['SAT', 'Saturday'], ['SUN', 'Sunday']].map(([short, full]) => `<span class="cal-dow" aria-label="${full}" title="${full}">${short}</span>`).join('')}${cells}</div>
+        ${monthSports.length ? `<div class="cal-legend" aria-label="Sports scheduled this month">${monthSports.map(id => `<span><i style="background:${ART[id]?.[0] || 'var(--court)'}" aria-hidden="true"></i>${sport(id).name}</span>`).join('')}</div>` : ''}
       </div>
       <div class="stack">
-        <div class="card"><div class="between"><div><p class="eyebrow" style="margin-bottom:4px">${relDay(sel)}</p><h3>${fmtLong(parseISO(sel))}</h3></div><button class="icon-btn" data-action="add-game" data-date="${sel}" aria-label="Add a game on this day">${ICON.plus}</button></div>
-          <div style="margin-top:8px">${selGames.length ? selGames.map(gameRow).join('') : `<p class="muted small" style="margin-top:8px">${sel < tk ? 'No games logged this day.' : 'Nothing planned. Add a game to fill it in.'}</p>`}</div></div>
-        <div class="card"><h3>Coming up</h3><div style="margin-top:4px">${upcoming.length ? upcoming.map(gameRow).join('') : '<p class="muted small" style="margin-top:8px">No upcoming games.</p>'}</div></div>
+        <section class="card" aria-labelledby="selectedDayHeading"><div class="between"><div><p class="eyebrow" style="margin-bottom:4px">${relDay(sel)}</p><h3 id="selectedDayHeading">${fmtLong(parseISO(sel))}</h3></div><button class="icon-btn" data-action="add-game" data-date="${sel}" aria-label="Add a game on this day">${ICON.plus}</button></div>
+          <div style="margin-top:8px">${selGames.length ? selGames.map(gameRow).join('') : `<p class="muted small" style="margin-top:8px">${sel < tk ? 'No games logged this day.' : 'Nothing planned. Add a game to fill it in.'}</p>`}</div></section>
+        <section class="card" aria-labelledby="upcomingGamesHeading"><h3 id="upcomingGamesHeading">Coming up</h3><div style="margin-top:4px">${upcoming.length ? upcoming.map(gameRow).join('') : '<p class="muted small" style="margin-top:8px">No upcoming games.</p>'}</div></section>
       </div>
     </div>`;
 };
