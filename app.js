@@ -963,24 +963,41 @@ function openConv(id) { ui.conv = id; ui.chatOpen = true; closeModal(); if (ui.r
 V.courts = async () => {
   const sf = S().ui.placeSport, list = await api.places(sf), upcoming = await api.games({ from: todayISO() });
   const used = [...new Set(PLACES.flatMap(p => p.sports))];
+  const selectedPlace = list.find(pl => pl.id === ui.openPlace);
+  const positions = { kiwanis: [27, 38], rec: [52, 54], northpark: [76, 27], byu: [75, 75], memorial: [31, 73] };
+  const markers = list.map((pl, i) => {
+    const [left, top] = positions[pl.id] || [20 + (i * 17) % 60, 25 + (i * 23) % 55];
+    const selected = ui.openPlace === pl.id;
+    return `<button type="button" class="map-pin ${selected ? 'selected' : ''}" data-action="toggle-place" data-id="${esc(pl.id)}" style="--pin-x:${left}%;--pin-y:${top}%" aria-label="${selected ? 'Hide details for' : 'Show details for'} ${esc(pl.name)}" aria-pressed="${selected}"><span>${i + 1}</span></button>`;
+  }).join('');
   view('courts').innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Around Provo</p><h1>Courts</h1>
-      <p class="sub">Where people are playing. Open a spot to see who plays there and plan a game.</p></div></header>
+      <p class="sub">Browse courts around Provo. Filter by sport, then open a court to see details and plan a game.</p></div></header>
     ${sportChips('place-filter', sf, SPORTS.map(s => s.id).filter(id => used.includes(id)))}
-    <div class="places block">${list.map(pl => placeCard(pl, upcoming)).join('') || `<div class="card empty"><h3>No spots for this sport yet</h3></div>`}</div>`;
+    <div class="courts-layout block">
+      <section class="card map-card" aria-labelledby="courtsMapHeading"><div class="between"><div><p class="eyebrow">Provo, Utah</p><h2 id="courtsMapHeading">Courts near you</h2></div><span class="pill">${plural(list.length, 'location')}</span></div>
+        <div class="map-preview" role="group" aria-label="Illustrative map preview showing ${list.length} court locations">
+          <svg class="map-art" viewBox="0 0 720 390" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="720" height="390" fill="#e8efe8"/><path d="M25 65 168 20l82 32 48-24 114 38 77-34 150 49 81-29M-10 176l132-31 74 22 103-29 90 42 71-25 110 27 166-47M13 328l108-74 109 24 72-38 96 50 87-29 124 56 123-24M176-20l27 99-27 97 43 75-37 158M388-25l-26 89 31 76-22 94 34 82-30 94M585-20l-41 87 31 68-24 87 48 68-36 102" fill="none" stroke="#d3dfd4" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/><path d="M-20 113 130 83l91 22 93-33 120 36 94-25 222 54M76 410l60-124 102 14 66-73 111 19 82-44 86 44 149-20" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><path d="M292 82l50 26-11 43-57-4-17-35ZM466 234l56-12 25 43-36 34-50-24ZM72 237l50-21 34 39-28 40-53-14Z" fill="#cfe3cd" stroke="#b9d3b8" stroke-width="2"/><text x="38" y="42">PROVO</text><text x="543" y="345">UTAH VALLEY</text></svg>
+          <div class="map-markers">${markers || '<p class="map-empty">No courts match this sport.</p>'}${selectedPlace ? `<div class="map-selected" role="status"><strong>${esc(selectedPlace.name)}</strong><span>${selectedPlace.count} ${esc(selectedPlace.unit)} · ${selectedPlace.mi} mi away</span></div>` : ''}</div>
+        </div>
+        <div class="map-note"><span><i aria-hidden="true"></i> Court location</span><p class="muted small">Preview only, not to scale. Live maps and exact locations will come with the Maps integration.</p></div>
+      </section>
+      <div class="places">${list.map((pl, i) => placeCard(pl, upcoming, i + 1)).join('') || `<div class="card empty"><h3>No spots for this sport yet</h3><p class="muted">Choose another sport to see more nearby courts.</p></div>`}</div>
+    </div>`;
 };
-function placeCard(pl, upcoming) {
+function placeCard(pl, upcoming, index) {
   const open = ui.openPlace === pl.id;
   const tone = /Busy/.test(pl.busy) ? 'clay' : /Steady/.test(pl.busy) ? 'warn' : 'good';
   const regulars = PEOPLE.filter(p => p.court === pl.id), mine = upcoming.filter(g => g.place === pl.id);
   const matched = S().matches;
   return `<article class="card place">
-    <button class="place-row" data-action="toggle-place" data-id="${pl.id}" aria-expanded="${open}">
+    <button type="button" class="place-row" data-action="toggle-place" data-id="${esc(pl.id)}" aria-expanded="${open}" aria-controls="court-details-${esc(pl.id)}">
+      <span class="place-index" aria-hidden="true">${index}</span>
       <span class="place-ic">${courtSVG(pl.sports[0])}</span>
       <span class="min0"><strong>${esc(pl.name)}</strong><small class="muted">${pl.sports.map(s => sport(s).name).join(' · ')}</small><small class="muted">${pl.setting} · ${pl.count} ${pl.unit} · ${pl.mi} mi</small></span>
       <span class="pill ${tone}">${esc(pl.busy)}</span>
     </button>
-    ${open ? `<div class="place-detail">
+    ${open ? `<div class="place-detail" id="court-details-${esc(pl.id)}">
       <div><p class="eyebrow">Players who play here</p>${regulars.length ? regulars.map(p => `<div class="list-row">${avatar(p.name, 32)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ')}</small></div>${matched.includes(p.id) ? `<button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button>` : `<button class="btn ghost sm" data-action="play-person" data-id="${p.id}">View</button>`}</div>`).join('') : '<p class="muted small">No regulars listed yet.</p>'}</div>
       <div><p class="eyebrow">Your games here</p>${mine.length ? mine.map(gameRow).join('') : '<p class="muted small">Nothing planned here yet.</p>'}</div>
       <div class="row full"><button class="btn sm" data-action="add-game" data-place="${pl.id}">${ICON.plus} Plan a game here</button><a class="btn ghost sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name + ', Provo, UT')}" target="_blank" rel="noopener">Directions</a></div>
