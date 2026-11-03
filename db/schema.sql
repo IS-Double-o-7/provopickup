@@ -175,10 +175,11 @@ grant execute on function public.my_matches() to authenticated;
 -- RLS is ON for every table. Reference data and the safe profile columns are
 -- readable by anyone; a signed-in user may write only their own rows.
 --
--- Known gaps, deliberately left for a team decision (see GitHub #3/#4):
---   * event and event_attendee still allow anonymous insert and delete, from
---     the pre-auth calendar slice. Tightening them would break the working
---     calendar for a signed-out visitor, so it is left for a team decision.
+-- Known gaps, deliberately left for a team decision (see GitHub #3/#4/#21):
+--   * event and event_attendee require a signed-in player to write, but writes
+--     are not yet scoped to the owner. app.js books every game as the seed
+--     placeholder 'me', so a host_id = current_profile_id() check would break
+--     booking. Ownership scoping follows the front-end change (Issue #21).
 
 alter table profile              enable row level security;
 alter table profile_private      enable row level security;
@@ -264,14 +265,19 @@ create policy "write own choices" on choice for all to authenticated
   using (swiper = public.current_profile_id())
   with check (swiper = public.current_profile_id());
 
--- The calendar slice predates sign-in and still writes as the anonymous role.
+-- Calendar: anyone may read the schedule; only a signed-in player may change it.
+-- Writes are not yet scoped to the owner -- see the note above and Issue #21.
 create policy "read event"   on event for select to anon, authenticated using (true);
-create policy "book event"   on event for insert to anon, authenticated with check (true);
-create policy "cancel event" on event for delete to anon, authenticated using (true);
+create policy "book event"   on event for insert to authenticated with check (true);
+create policy "cancel event" on event for delete to authenticated using (true);
 
 create policy "read attendees"   on event_attendee for select to anon, authenticated using (true);
-create policy "add attendees"    on event_attendee for insert to anon, authenticated with check (true);
-create policy "remove attendees" on event_attendee for delete to anon, authenticated using (true);
+create policy "add attendees"    on event_attendee for insert to authenticated with check (true);
+create policy "remove attendees" on event_attendee for delete to authenticated using (true);
+
+-- Second layer, so the block does not rest on policy evaluation alone.
+revoke insert, update, delete on event          from anon;
+revoke insert, update, delete on event_attendee from anon;
 
 -- ---- Storage ----
 -- Profile photos: bucket 'profile-photos', one folder per Auth user,
