@@ -95,8 +95,16 @@ create table venue (
   setting     text,
   court_count integer,
   unit        text,
+  -- Static distance from the original mock-up. It does not say distance from
+  -- where, so it cannot be right for more than one player; with latitude and
+  -- longitude below, distance should be computed from the player instead.
   miles_away  numeric(4,1),
-  busy_note   text
+  busy_note   text,
+  -- Geocoded from OpenStreetMap. Every venue must be mappable (Issue #26).
+  latitude    numeric(9,6) not null,
+  longitude   numeric(9,6) not null,
+  constraint venue_latitude_range  check (latitude  between -90  and 90),
+  constraint venue_longitude_range check (longitude between -180 and 180)
 );
 
 -- Many-to-many: a court hosts several sports.
