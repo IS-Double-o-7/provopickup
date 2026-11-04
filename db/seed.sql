@@ -9,12 +9,14 @@ insert into interests (interest_id, interest_name, icon, community) values
   ('tennis','Tennis','🎾','2.8k'), ('spikeball','Spikeball','🟡','1.4k'),
   ('badminton','Badminton','🏸','1.1k'), ('kickball','Kickball','🔴','620');
 
-insert into venue (venue_id, venue_name, setting, court_count, unit, miles_away, busy_note) values
-  ('kiwanis','Kiwanis Park Courts','Outdoor',6,'courts',2.1,'Busy evenings'),
-  ('rec','Provo Rec Center','Indoor',4,'courts',3.4,'Steady all day'),
-  ('northpark','North Park Fields','Outdoor',3,'fields',3.8,'Quiet weekdays'),
-  ('byu','BYU Outdoor Courts','Outdoor',8,'courts',4.0,'Busy weekends'),
-  ('memorial','Memorial Park','Outdoor',2,'courts',4.7,'Quiet');
+-- Coordinates geocoded from OpenStreetMap; the byu row is the outdoor tennis
+-- courts, not the campus centroid.
+insert into venue (venue_id, venue_name, setting, court_count, unit, miles_away, busy_note, latitude, longitude) values
+  ('kiwanis','Kiwanis Park Courts','Outdoor',6,'courts',2.1,'Busy evenings', 40.246962,-111.639196),
+  ('rec','Provo Rec Center','Indoor',4,'courts',3.4,'Steady all day',        40.241679,-111.664230),
+  ('northpark','North Park Fields','Outdoor',3,'fields',3.8,'Quiet weekdays',40.245514,-111.666089),
+  ('byu','BYU Outdoor Courts','Outdoor',8,'courts',4.0,'Busy weekends',      40.245629,-111.655288),
+  ('memorial','Memorial Park','Outdoor',2,'courts',4.7,'Quiet',              40.234946,-111.644560);
 
 insert into venue_interest (venue_id, interest_id) values
   ('kiwanis','pickleball'),
