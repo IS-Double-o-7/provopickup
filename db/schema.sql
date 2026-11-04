@@ -76,8 +76,12 @@ create table messages (
   sender_id   text not null references profile(profile_id) on delete cascade,
   receiver_id text not null references profile(profile_id) on delete cascade,
   message     text not null,
-  sent_at     timestamptz not null default now()
+  sent_at     timestamptz not null default now(),
+  -- Null means unread. Only the receiver may set it (see the policy below).
+  read_at     timestamptz
 );
+
+create index messages_unread_idx on messages (receiver_id) where read_at is null;
 
 create table reporting (
   reporting_id bigint generated always as identity primary key,
@@ -248,6 +252,18 @@ create policy "write own photo" on photo for all to authenticated
 create policy "read own messages" on messages for select to authenticated
   using (sender_id = public.current_profile_id()
       or receiver_id = public.current_profile_id());
+
+-- Marking a message read is an UPDATE, but there must still be no edit or
+-- unsend. `authenticated` keeps no table-wide update grant: UPDATE is granted
+-- on read_at alone, so message, sender_id, receiver_id and sent_at are
+-- unreachable at the privilege layer. The policy then limits it to your own
+-- incoming messages (#31).
+revoke update on messages from authenticated;
+grant  update (read_at) on messages to authenticated;
+
+create policy "mark own messages read" on messages for update to authenticated
+  using      (receiver_id = public.current_profile_id())
+  with check (receiver_id = public.current_profile_id());
 
 create policy "read own reports" on reporting for select to authenticated
   using (reporter = public.current_profile_id());
