@@ -250,6 +250,14 @@ create policy "read own messages" on messages for select to authenticated
   using (sender_id = public.current_profile_id()
       or receiver_id = public.current_profile_id());
 
+-- You may send only as yourself, and only to a confirmed mutual match. UPDATE
+-- and DELETE have no policy, so there is no unsend or edit (Issue #23).
+create policy "send to a match" on messages for insert to authenticated
+  with check (sender_id = public.current_profile_id()
+          and receiver_id in (select profile_id from public.my_matches()));
+
+revoke insert, update, delete on messages from anon;
+
 create policy "read own reports" on reporting for select to authenticated
   using (reporter = public.current_profile_id());
 
