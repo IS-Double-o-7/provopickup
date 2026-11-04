@@ -39,7 +39,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 |---|---|---|---|
 | L1 | A visitor sees the Log in / Sign up page before anything else, until they are signed in | Complete | Live site; responsive check at 8 screen sizes (#16) |
 | L2 | A new user can create an account with an email and a password (6+ characters) | Complete | A real account was created on the live site; it exists in Supabase Auth |
-| L3 | A new account must confirm its email before first log-in, and the link returns to the site | Not complete | Confirmation is on in Supabase; where the link lands from the live site has not been checked |
+| L3 | A new account must confirm its email before first log-in, and the link returns to the site | Complete | Verified on the live site 2026-11-03. Site URL and redirect URLs now point at GitHub Pages; a real sign-up confirmed in 12s and landed signed in at the profile setup step |
 | L4 | A returning user can log in, and stays signed in after a reload | Complete | Live site, Brook's account (Oct 30) |
 | L5 | A new user must create a profile before using the app: photo, first name, at least one sport with a skill level, at least one availability slot; bio optional | Complete | Live: the account's profile, sport, availability and photo rows exist in Supabase; photo loads from Storage (200, image/jpeg) |
 | L6 | A user who already has a profile goes straight to the app on log-in | Complete | Live site, Brook's account; 4 login cases tested in #13 |
@@ -124,7 +124,7 @@ The source is `docs/erd.svg`.
 | **Choice** | One swipe decision | ChoiceID (PK), Swiper (FK), SwipedOn (FK), Yes, No |
 | **Messages** | Chat between matched players | MessageID (PK), ChoiceID (FK), SenderID (FK), ReceiverID (FK), Message, SentAt |
 | **Reporting** | Safety reports | ReportingID (PK), Reporter (FK), ReportedOn (FK), ReportedAt, Why |
-| **Venue** | A court, park or field | VenueID (PK), VenueName, Setting, CourtCount, Unit, MilesAway, BusyNote |
+| **Venue** | A court, park or field | VenueID (PK), VenueName, Setting, CourtCount, Unit, MilesAway, BusyNote, Latitude, Longitude |
 | **Venue-Interest** | Which sports a venue supports | VenueInterestID (PK), VenueID (FK), InterestID (FK) |
 | **Event** | A scheduled or played game | EventID (PK), HostID (FK), InterestID (FK), VenueID (FK), EventDate, EventTime, Note, NewPeopleMet, CreatedAt |
 | **EventAttendee** | Who is playing in a game | EventAttendeeID (PK), EventID (FK), ProfileID (FK), Status |
@@ -179,9 +179,11 @@ publishable key is meant to ship in frontend code, and it can only do what our
 row-level security policies allow. Anyone may read the public profile columns
 (`profile_id`, `name`, `bio`), sports, availability, photos and reference data. A
 signed-in player may write only their own profile, sports, availability, photo and
-swipes. Private contact details, swipes, messages and reports are readable only by
-their owner. The calendar's `event` and `event_attendee` still allow anonymous
-insert and delete from the original vertical slice.
+swipes, and may send a message only as themselves and only to a confirmed mutual
+match. Private contact details, swipes, messages and reports are readable only by
+their owner. The calendar's `event` and `event_attendee` may be read by anyone but
+changed only by a signed-in player; those writes are not yet scoped to the game's
+host, because the calendar still books under the seed placeholder profile (Issue #21).
 
 The **`service_role` key**, which bypasses all security, is never committed and is not
 in this repository. `.env` is listed in `.gitignore`.
