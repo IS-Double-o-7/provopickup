@@ -276,6 +276,8 @@ on their profile.
 - The adapter finds the signed-in player's row with `current_profile_id()`; it never
   selects `auth_uid`, which signed-out clients cannot read. Migrations 001 (#8) and the
   column-privacy fix (#11) are applied to the live Supabase project.
+  Migration 003 widens availability to mornings, afternoons and evenings on every day
+  (21 slots); it must be applied before the profile page that offers them goes live.
 - The sample calendar data stays attached to the demo `me` profile.
 
 ---
