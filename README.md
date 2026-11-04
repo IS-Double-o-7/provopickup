@@ -39,7 +39,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 |---|---|---|---|
 | L1 | A visitor sees the Log in / Sign up page before anything else, until they are signed in | Complete | Live site; responsive check at 8 screen sizes (#16) |
 | L2 | A new user can create an account with an email and a password (6+ characters) | Complete | A real account was created on the live site; it exists in Supabase Auth |
-| L3 | A new account must confirm its email before first log-in, and the link returns to the site | Not complete | Confirmation is on in Supabase; where the link lands from the live site has not been checked |
+| L3 | A new account must confirm its email before first log-in, and the link returns to the site | Complete | Verified on the live site 2026-11-03. Site URL and redirect URLs now point at GitHub Pages; a real sign-up confirmed in 12s and landed signed in at the profile setup step |
 | L4 | A returning user can log in, and stays signed in after a reload | Complete | Live site, Brook's account (Oct 30) |
 | L5 | A new user must create a profile before using the app: photo, first name, at least one sport with a skill level, at least one availability slot; bio optional | Complete | Live: the account's profile, sport, availability and photo rows exist in Supabase; photo loads from Storage (200, image/jpeg) |
 | L6 | A user who already has a profile goes straight to the app on log-in | Complete | Live site, Brook's account; 4 login cases tested in #13 |
