@@ -1,4 +1,4 @@
--- 003: Let players pick mornings, afternoons and evenings on every day.
+-- 007: Let players pick mornings, afternoons and evenings on every day.
 --
 -- profile_availability.slot used to accept only eight values
 -- ('Mon eve' ... 'Sun pm'). The profile page now offers every day in three

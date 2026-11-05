@@ -43,7 +43,7 @@ create table profile_interest (
 );
 
 -- When a player is free: every day in three parts (am, pm, eve). The 21 slots
--- are the keys of SLOTS in app.js (see db/migrations/003).
+-- are the keys of SLOTS in app.js (see db/migrations/007).
 create table profile_availability (
   profile_availability_id bigint generated always as identity primary key,
   profile_id text not null references profile(profile_id) on delete cascade,

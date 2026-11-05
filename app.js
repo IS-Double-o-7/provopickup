@@ -88,7 +88,7 @@ const SPORTS = [
 const sport = id => SPORTS.find(s => s.id === id) || SPORTS[0];
 const LEVELS = ['Beginner', 'Casual', 'Intermediate', 'Advanced'];
 // Availability: every day, in three parts. Keys like 'Tue eve' are stored in
-// profile_availability.slot; db/migrations/003 lists the same 21 values.
+// profile_availability.slot; db/migrations/007 lists the same 21 values.
 const SLOT_DAYS = [['Mon', 'Monday'], ['Tue', 'Tuesday'], ['Wed', 'Wednesday'], ['Thu', 'Thursday'], ['Fri', 'Friday'], ['Sat', 'Saturday'], ['Sun', 'Sunday']];
 const SLOT_PARTS = [['am', 'Morning', 'mornings'], ['pm', 'Afternoon', 'afternoons'], ['eve', 'Evening', 'evenings']];
 const SLOTS = Object.fromEntries(SLOT_DAYS.flatMap(([d, day]) => SLOT_PARTS.map(([k, , plural]) => [`${d} ${k}`, `${day} ${plural}`])));
