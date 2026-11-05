@@ -304,6 +304,30 @@ create policy "remove attendees" on event_attendee for delete to authenticated u
 revoke insert, update, delete on event          from anon;
 revoke insert, update, delete on event_attendee from anon;
 
+-- ---- Anonymous privilege floor (migration 008) ----
+-- RLS already denies anonymous writes everywhere: every table has row security
+-- on and no policy grants anon an INSERT, UPDATE or DELETE. These revokes are
+-- the second lock, so a missing or mistaken policy is not the only thing
+-- standing between a visitor and the data.
+--
+-- TRUNCATE is the one that genuinely needs this. TRUNCATE is not subject to row
+-- security at all, so none of the policies above constrain it. Emptying a table
+-- is not a policy violation, it is a permitted operation for whoever holds the
+-- privilege.
+--
+-- anon keeps every SELECT grant: public reads must keep working.
+revoke truncate on all tables in schema public from anon;
+revoke references, trigger on all tables in schema public from anon;
+revoke insert, update, delete on
+  choice, interests, photo, profile, profile_availability, profile_interest,
+  profile_private, reporting, venue, venue_interest
+from anon;
+
+-- Supabase hands new tables the full grant set by default, which would quietly
+-- reopen this the next time someone runs `create table`.
+alter default privileges in schema public
+  revoke truncate, references, trigger on tables from anon;
+
 -- ---- Storage ----
 -- Profile photos: bucket 'profile-photos', one folder per Auth user,
 -- <auth.uid()>/<filename>. Public read; owner-only write.
