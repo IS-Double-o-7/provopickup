@@ -375,6 +375,31 @@ See **Behavioral Requirements** above for what has been checked end to end.
 - `db/seed.sql` – sample rows for every table
 - `docs/erd.png` – the diagram above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
 
+### Bump the asset version when you change the front end
+
+`index.html` loads the local assets with a version string:
+
+```html
+<link rel="stylesheet" href="styles.css?v=2026-11-06">
+<script src="app.js?v=2026-11-06"></script>
+```
+
+**If you change `styles.css`, `config.js`, `auth.js` or `app.js`, bump every `?v=` in
+`index.html` in the same commit.** Use the date, adding `-2`, `-3` and so on for later
+deploys the same day.
+
+This is not decoration. GitHub Pages serves every file with `Cache-Control: max-age=600`
+and no shared cache key, so `index.html`, `styles.css` and `app.js` each expire on their
+own ten-minute clock. A returning browser can therefore load a **new `index.html`
+against a stale `styles.css`**. That combination does not fail loudly — it renders the
+weekly availability grid as scrambled boxes, because `.week` is defined twice (the
+challenge streak strip uses a 7-column version, the availability grid a 4-column one)
+and the old stylesheet only has the first. Changing the version string gives the browser
+a URL it has never seen, so the HTML and its assets always arrive as a matched set.
+
+If you are testing the live site and something looks wrong, hard-refresh
+(`Cmd+Shift+R` / `Ctrl+Shift+R`) before reporting it.
+
 ### How `app.js` is organized
 
 1. **Helpers** – date formatting, escaping, icons
