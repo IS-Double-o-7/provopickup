@@ -156,19 +156,8 @@ function seed() {
     v: 1,
     profile: { name: '', sports: { pickleball: 'Intermediate', volleyball: 'Casual', basketball: 'Casual' }, avail: ['Tue eve', 'Thu eve', 'Sat am'] },
     swipes: {},
-    matches: ['jamie', 'marcus', 'taylor'],
-    conversations: [
-      { id: 'c-jamie', with: 'jamie', unread: 1, messages: [
-        { from: 'them', text: `Good games ${weekdayName(addDays(t, -3))}! Your third shot drop is getting dangerous.`, at: now - 50 * H },
-        { from: 'me', text: 'Ha, thanks. Your serve is the real problem.', at: now - 49 * H },
-        { from: 'them', text: `Still good for ${weekdayName(addDays(t, 2))} at 6? I can grab court 3.`, at: now - 9 * M } ] },
-      { id: 'c-marcus', with: 'marcus', unread: 1, messages: [
-        { from: 'me', text: 'Rec center next week? They open the full court at 7.', at: now - 5 * H },
-        { from: 'them', text: 'That court works for me!', at: now - 2 * H } ] },
-      { id: 'c-taylor', with: 'taylor', unread: 0, messages: [
-        { from: 'them', text: 'Fun game last night. Same time next week?', at: now - 20 * H },
-        { from: 'me', text: 'Count me in.', at: now - 19 * H } ] },
-    ],
+    matches: [],
+    conversations: [],
     games: [],
     challenges: { done, swaps: {} },
     reels: { liked: [], saved: [], following: ['@provo.pickle'], hidden: [], posts: [], comments: {} },
@@ -1243,7 +1232,6 @@ async function openProfile() {
       ${availFields('p', p.avail)}
       <p class="auth-msg" id="p-msg" role="alert" data-kind="error" hidden></p>
       <div class="row"><button class="btn" type="submit">Save profile</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
-      <div style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px"><p class="muted small" style="margin-bottom:10px">Start over with the original sample players, games and messages.</p><button class="btn danger sm" type="button" data-action="reset-demo">Reset all app data</button></div>
       ${window.RallyAuth && window.RallyAuth.user() ? `<div class="auth-account"><p class="muted small">Signed in as <b>${esc(window.RallyAuth.user().email)}</b></p><button class="btn ghost sm" type="button" data-auth="sign-out">Log out</button></div>` : ''}
     </form>`);
 }
@@ -1282,10 +1270,6 @@ document.addEventListener('click', async e => {
     case 'more': openSheet(); break;
     case 'open-profile': closeSheet(); await openProfile(); break;
     case 'retry-profile': { const user = window.RallyAuth && window.RallyAuth.user(); if (user) await boot(user); break; }
-    case 'reset-demo':
-      if (!ui.resetArmed) { ui.resetArmed = true; a.textContent = 'Tap again to erase your changes'; setTimeout(() => { ui.resetArmed = false; if (a.isConnected) a.textContent = 'Reset all app data'; }, 4000); break; }
-      { const keep = S().profile; await api.reset(); if (keep.ownerId) { S().profile = keep; store.save(); } } Object.assign(ui, { conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, typing: {} });
-      closeModal(); renderMe(); render(); toast('App data reset to the sample'); break;
 
     case 'pick-sport': saveUI('playSport', id); go('play'); break;
     case 'play-filter': saveUI('playSport', id); render(); break;
@@ -1423,7 +1407,15 @@ function startApp() {
 }
 // Nothing renders until auth.js reports a signed-in player, and a new
 // player sets up their profile before seeing the app.
+// Messages still live in this browser. Clear them when a different account signs
+// in, so every player starts with an empty inbox (and never sees sample chats).
+function claimLocalData(user) {
+  if (!user || user.demo || S().accountId === user.id) return;
+  Object.assign(S(), { accountId: user.id, conversations: [], matches: [] });
+  store.save();
+}
 async function boot(user) {
+  claimLocalData(user);
   // A profile set up before profiles were saved to the database lives only in
   // this browser. Keep a copy before api.profile() replaces it with the database version.
   const local = S().profile;
