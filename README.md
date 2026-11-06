@@ -78,6 +78,28 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 
 ---
 
+## System Architecture
+
+![Rally Provo system architecture](docs/architecture.png)
+
+Solid lines are live; dashed lines are planned. Each arrow is labeled with the data it
+carries. The source is `docs/architecture.svg`.
+
+- **Customer-facing app (live):** a static HTML/CSS/JavaScript web app hosted on GitHub
+  Pages, using Supabase for logins (Auth), data (Postgres with row-level security) and
+  profile photos (Storage).
+- **Admin portal (planned):** admin pages (HTML/CSS) and an Express/Node server with its
+  own database (RDS), hosted on AWS.
+- **Where the apps connect (proposed):** the admin server reads reports and player
+  accounts from Supabase and can hide or restore profiles, using a server-only key.
+- **External services:** jsDelivr and Google Fonts (code library and fonts) and
+  Supabase's email sender (confirmation link) are live. The AI workflow is planned: a
+  Supabase Edge Function sends each new game to an AI model API, which writes an invite,
+  and the function posts it to Discord. This is the team's leading candidate, not yet
+  approved.
+
+---
+
 ## ERD
 
 ![Rally Provo entity relationship diagram](docs/erd.png)

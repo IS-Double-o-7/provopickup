@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1100" viewBox="0 0 1800 1100"><defs><marker id="m122030" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#122030"/></marker><marker id="m1D5C8F" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1D5C8F"/></marker><marker id="m1F8A5B" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1F8A5B"/></marker><marker id="m6B4FA0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6B4FA0"/></marker><marker id="m9A5B00" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9A5B00"/></marker><marker id="m7D8B9A" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7D8B9A"/></marker><marker id="mC2410C" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#C2410C"/></marker></defs><rect width="1800" height="1100" fill="#FFFFFF"/>
+<text x="40" y="54" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="800" fill="#122030" text-anchor="start">Rally Provo · System Architecture</text>
+<rect x="40" y="79" width="18" height="18" rx="4" fill="#FFFFFF" stroke="#1D5C8F" stroke-width="2.2"/>
+<text x="66" y="93" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#1D5C8F" text-anchor="start">Customer app</text>
+<rect x="194.39999999999998" y="79" width="18" height="18" rx="4" fill="#FFFFFF" stroke="#1F8A5B" stroke-width="2.2"/>
+<text x="220.39999999999998" y="93" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#1F8A5B" text-anchor="start">Supabase</text>
+<rect x="316.0" y="79" width="18" height="18" rx="4" fill="#FFFFFF" stroke="#6B4FA0" stroke-width="2.2" stroke-dasharray="9 7"/>
+<text x="342.0" y="93" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#6B4FA0" text-anchor="start">Admin portal</text>
+<rect x="470.4" y="79" width="18" height="18" rx="4" fill="#FFFFFF" stroke="#9A5B00" stroke-width="2.2"/>
+<text x="496.4" y="93" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#9A5B00" text-anchor="start">External service</text>
+<line x1="657.5999999999999" y1="88" x2="697.5999999999999" y2="88" stroke="#122030" stroke-width="2.3"/>
+<text x="705.5999999999999" y="93" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#122030" text-anchor="start">Live</text>
+<line x1="757.5999999999999" y1="88" x2="797.5999999999999" y2="88" stroke="#7D8B9A" stroke-width="2.3" stroke-dasharray="7 6"/>
+<text x="805.5999999999999" y="93" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#7D8B9A" text-anchor="start">Planned</text>
+<text x="897.5999999999999" y="93" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" fill="#56687B" text-anchor="start">Labels = data on each arrow</text>
+<rect x="30" y="140" width="1190" height="520" rx="22" fill="#EEF4FA" stroke="#1D5C8F" stroke-width="2.6"/>
+<text x="50" y="172" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="800" fill="#1D5C8F" text-anchor="start">Customer-facing app (live)</text>
+<rect x="56" y="196" width="220" height="72" rx="12" fill="#E3EDF7" stroke="#1D5C8F" stroke-width="1.8"/>
+<text x="70" y="223" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#1D5C8F" text-anchor="start">Player</text>
+<text x="70" y="245" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">phone or desktop</text>
+<rect x="56" y="470" width="220" height="72" rx="12" fill="#FFFFFF" stroke="#122030" stroke-width="1.8"/>
+<text x="70" y="497" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#122030" text-anchor="start">GitHub Pages</text>
+<text x="70" y="519" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">hosts the site</text>
+<rect x="420" y="196" width="250" height="410" rx="12" fill="#FFFFFF" stroke="#1D5C8F" stroke-width="1.8"/>
+<text x="434" y="223" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#1D5C8F" text-anchor="start">Web app</text>
+<text x="434" y="245" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">HTML · CSS · JavaScript</text>
+<text x="434" y="268" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">Login · Profile · Play</text>
+<text x="434" y="290" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">Calendar · Home · Stats</text>
+<polyline points="276,222 416,222" fill="none" stroke="#1D5C8F" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m1D5C8F)"/>
+<rect x="288.4" y="197" width="119.20000000000002" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="348.0" y="212" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#1D5C8F" text-anchor="middle">profile, swipes</text>
+<polyline points="420,252 280,252" fill="none" stroke="#1D5C8F" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m1D5C8F)"/>
+<rect x="292.03999999999996" y="259" width="111.92000000000002" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="348.0" y="274" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#1D5C8F" text-anchor="middle">cards, matches</text>
+<polyline points="276,506 416,506" fill="none" stroke="#122030" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m122030)"/>
+<rect x="306.6" y="481" width="82.80000000000001" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="348.0" y="496" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#122030" text-anchor="middle">site files</text>
+<rect x="810" y="166" width="400" height="480" rx="22" fill="#F6FCF9" stroke="#1F8A5B" stroke-width="2.6"/>
+<text x="830" y="198" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="800" fill="#1F8A5B" text-anchor="start">Supabase</text>
+<rect x="830" y="214" width="360" height="70" rx="12" fill="#FFFFFF" stroke="#1F8A5B" stroke-width="1.8"/>
+<text x="844" y="241" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#1F8A5B" text-anchor="start">Auth</text>
+<text x="844" y="263" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">accounts and logins</text>
+<rect x="830" y="302" width="360" height="92" rx="12" fill="#FFFFFF" stroke="#1F8A5B" stroke-width="1.8"/>
+<text x="844" y="329" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#1F8A5B" text-anchor="start">Database (Postgres)</text>
+<text x="844" y="351" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">profiles, swipes, matches, games</text>
+<text x="844" y="384" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="400" fill="#56687B" text-anchor="start">privacy rules on every table</text>
+<rect x="830" y="444" width="360" height="70" rx="12" fill="#FFFFFF" stroke="#7D8B9A" stroke-width="1.8" stroke-dasharray="9 7"/>
+<text x="844" y="471" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#7D8B9A" text-anchor="start">Edge Function · planned</text>
+<text x="844" y="493" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#7D8B9A" text-anchor="start">announces new games</text>
+<rect x="830" y="534" width="360" height="70" rx="12" fill="#FFFFFF" stroke="#1F8A5B" stroke-width="1.8"/>
+<text x="844" y="561" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#1F8A5B" text-anchor="start">Storage</text>
+<text x="844" y="583" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">profile photos</text>
+<polyline points="670,249 826,249" fill="none" stroke="#1F8A5B" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m1F8A5B)" marker-start="url(#m1F8A5B)"/>
+<rect x="697.68" y="223" width="104.64000000000001" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="750.0" y="238" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#1F8A5B" text-anchor="middle">login ⇄ token</text>
+<polyline points="670,340 826,340" fill="none" stroke="#1F8A5B" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m1F8A5B)" marker-start="url(#m1F8A5B)"/>
+<rect x="683.12" y="303" width="133.76" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="750.0" y="318" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#1F8A5B" text-anchor="middle">profile, swipes ⇄</text>
+<rect x="694.04" y="321" width="111.92000000000002" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="750.0" y="336" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#1F8A5B" text-anchor="middle">cards, matches</text>
+<polyline points="670,569 826,569" fill="none" stroke="#1F8A5B" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m1F8A5B)" marker-start="url(#m1F8A5B)"/>
+<rect x="683.12" y="543" width="133.76" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="750.0" y="558" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#1F8A5B" text-anchor="middle">photo ⇄ photo URL</text>
+<polyline points="1010.0,394 1010.0,440" fill="none" stroke="#7D8B9A" stroke-width="2.3" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#m7D8B9A)"/>
+<rect x="1017.0" y="408" width="63.760000000000005" height="17" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="1022.0" y="422" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" fill="#7D8B9A" text-anchor="start">new game</text>
+<rect x="1340" y="140" width="420" height="520" rx="22" fill="#FFF8EC" stroke="#9A5B00" stroke-width="2.6"/>
+<text x="1360" y="172" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="800" fill="#9A5B00" text-anchor="start">External services</text>
+<rect x="1360" y="196" width="380" height="72" rx="12" fill="#FFFFFF" stroke="#9A5B00" stroke-width="1.8"/>
+<text x="1374" y="223" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#9A5B00" text-anchor="start">jsDelivr + Google Fonts</text>
+<text x="1374" y="245" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">code library and fonts</text>
+<rect x="1360" y="300" width="380" height="72" rx="12" fill="#FFFFFF" stroke="#9A5B00" stroke-width="1.8"/>
+<text x="1374" y="327" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#9A5B00" text-anchor="start">Email sender</text>
+<text x="1374" y="349" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#56687B" text-anchor="start">confirmation link to player’s inbox</text>
+<rect x="1360" y="444" width="380" height="72" rx="12" fill="#FFFFFF" stroke="#7D8B9A" stroke-width="1.8" stroke-dasharray="9 7"/>
+<text x="1374" y="471" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#7D8B9A" text-anchor="start">AI model API · planned</text>
+<text x="1374" y="493" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#7D8B9A" text-anchor="start">writes the game invite</text>
+<rect x="1360" y="548" width="380" height="72" rx="12" fill="#FFFFFF" stroke="#7D8B9A" stroke-width="1.8" stroke-dasharray="9 7"/>
+<text x="1374" y="575" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#7D8B9A" text-anchor="start">Discord · planned</text>
+<text x="1374" y="597" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#7D8B9A" text-anchor="start">posts invites to sport channels</text>
+<polyline points="1360,232 1300,232 1300,120 545,120 545,192" fill="none" stroke="#9A5B00" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m9A5B00)"/>
+<rect x="820.4" y="109" width="119.20000000000002" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="880" y="124" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#9A5B00" text-anchor="middle">library + fonts</text>
+<polyline points="1190,249 1270,249 1270,336 1356,336" fill="none" stroke="#9A5B00" stroke-width="2.3" stroke-linejoin="round" marker-end="url(#m9A5B00)"/>
+<rect x="1224.68" y="282" width="90.64000000000001" height="17" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="1270" y="296" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" fill="#9A5B00" text-anchor="middle">email + link</text>
+<polyline points="1190,470 1356,470" fill="none" stroke="#7D8B9A" stroke-width="2.3" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#m7D8B9A)" marker-start="url(#m7D8B9A)"/>
+<rect x="1226.32" y="446" width="97.36000000000001" height="17" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="1275.0" y="460" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" fill="#7D8B9A" text-anchor="middle">game ⇄ invite</text>
+<polyline points="1190,496 1300,496 1300,584 1356,584" fill="none" stroke="#7D8B9A" stroke-width="2.3" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#m7D8B9A)"/>
+<rect x="1258.04" y="534" width="83.92" height="17" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="1300" y="548" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" fill="#7D8B9A" text-anchor="middle">invite post</text>
+<polyline points="1010.0,780 1010.0,650" fill="none" stroke="#C2410C" stroke-width="2.3" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#mC2410C)" marker-start="url(#mC2410C)"/>
+<rect x="840.0" y="674" width="340" height="58" rx="10" fill="#FFF4EE" stroke="#C2410C" stroke-width="2"/>
+<text x="1010.0" y="697" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="800" fill="#C2410C" text-anchor="middle">Apps connect here</text>
+<text x="1010.0" y="718" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#C2410C" text-anchor="middle">reports, accounts ⇄ hide / restore</text>
+<rect x="30" y="750" width="1190" height="330" rx="22" fill="#F8F5FD" stroke="#6B4FA0" stroke-width="2.6" stroke-dasharray="9 7"/>
+<text x="50" y="782" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="800" fill="#6B4FA0" text-anchor="start">Admin portal (planned)</text>
+<rect x="400" y="776" width="806" height="290" rx="16" fill="#FFFFFF" stroke="#9A5B00" stroke-width="2" stroke-dasharray="9 7"/>
+<text x="420" y="800" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="700" fill="#9A5B00" text-anchor="start">Hosted on AWS</text>
+<rect x="56" y="840" width="220" height="72" rx="12" fill="#FFFFFF" stroke="#7D8B9A" stroke-width="1.8" stroke-dasharray="9 7"/>
+<text x="70" y="867" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#7D8B9A" text-anchor="start">Admin user</text>
+<text x="70" y="889" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#7D8B9A" text-anchor="start">Team 007 moderator</text>
+<rect x="420" y="840" width="250" height="72" rx="12" fill="#FFFFFF" stroke="#7D8B9A" stroke-width="1.8" stroke-dasharray="9 7"/>
+<text x="434" y="867" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#7D8B9A" text-anchor="start">Admin pages</text>
+<text x="434" y="889" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#7D8B9A" text-anchor="start">HTML / CSS</text>
+<rect x="830" y="840" width="360" height="72" rx="12" fill="#FFFFFF" stroke="#7D8B9A" stroke-width="1.8" stroke-dasharray="9 7"/>
+<text x="844" y="867" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#7D8B9A" text-anchor="start">Express / Node server</text>
+<text x="844" y="889" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#7D8B9A" text-anchor="start">admin logic</text>
+<rect x="830" y="970" width="360" height="72" rx="12" fill="#FFFFFF" stroke="#7D8B9A" stroke-width="1.8" stroke-dasharray="9 7"/>
+<text x="844" y="997" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="700" fill="#7D8B9A" text-anchor="start">Admin database (RDS)</text>
+<text x="844" y="1019" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" fill="#7D8B9A" text-anchor="start">admin accounts, audit log</text>
+<polyline points="276,876 416,876" fill="none" stroke="#6B4FA0" stroke-width="2.3" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#m6B4FA0)" marker-start="url(#m6B4FA0)"/>
+<rect x="284.76" y="851" width="126.48000000000002" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="348.0" y="866" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#6B4FA0" text-anchor="middle">clicks ⇄ reports</text>
+<polyline points="670,876 826,876" fill="none" stroke="#6B4FA0" stroke-width="2.3" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#m6B4FA0)" marker-start="url(#m6B4FA0)"/>
+<rect x="690.4" y="851" width="119.20000000000002" height="18" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="750.0" y="866" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#6B4FA0" text-anchor="middle">requests ⇄ JSON</text>
+<polyline points="1010.0,912 1010.0,966" fill="none" stroke="#6B4FA0" stroke-width="2.3" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#m6B4FA0)" marker-start="url(#m6B4FA0)"/>
+<rect x="1017.0" y="930" width="110.80000000000001" height="17" rx="4" fill="#FFFFFF" fill-opacity="0.95"/>
+<text x="1022.0" y="944" font-family="Inter, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" fill="#6B4FA0" text-anchor="start">audit log (SQL)</text>
+</svg>
