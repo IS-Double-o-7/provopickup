@@ -87,7 +87,11 @@ const SPORTS = [
 ];
 const sport = id => SPORTS.find(s => s.id === id) || SPORTS[0];
 const LEVELS = ['Beginner', 'Casual', 'Intermediate', 'Advanced'];
-const SLOTS = { 'Mon eve': 'Monday evenings', 'Tue eve': 'Tuesday evenings', 'Wed eve': 'Wednesday evenings', 'Thu eve': 'Thursday evenings', 'Fri eve': 'Friday evenings', 'Sat am': 'Saturday mornings', 'Sat pm': 'Saturday afternoons', 'Sun pm': 'Sunday afternoons' };
+// Availability: every day, in three parts. Keys like 'Tue eve' are stored in
+// profile_availability.slot; db/migrations/007 lists the same 21 values.
+const SLOT_DAYS = [['Mon', 'Monday'], ['Tue', 'Tuesday'], ['Wed', 'Wednesday'], ['Thu', 'Thursday'], ['Fri', 'Friday'], ['Sat', 'Saturday'], ['Sun', 'Sunday']];
+const SLOT_PARTS = [['am', 'Morning', 'mornings'], ['pm', 'Afternoon', 'afternoons'], ['eve', 'Evening', 'evenings']];
+const SLOTS = Object.fromEntries(SLOT_DAYS.flatMap(([d, day]) => SLOT_PARTS.map(([k, , plural]) => [`${d} ${k}`, `${day} ${plural}`])));
 
 const PLACES = [
   { id: 'kiwanis', name: 'Kiwanis Park Courts', sports: ['pickleball'], setting: 'Outdoor', count: 6, unit: 'courts', mi: 2.1, busy: 'Busy evenings' },
@@ -1164,9 +1168,14 @@ function photoField(pre, photo, required) {
 }
 const sportLevelFields = (pre, sports) => `<div class="field"><span class="lbl">Sports you play and your level</span><div class="sport-levels">${SPORTS.map(s => `<div class="field"><label for="${pre}-sp-${s.id}" style="font-weight:600">${s.icon} ${s.name}</label><select id="${pre}-sp-${s.id}"><option value="">Not playing</option>${LEVELS.map(l => `<option ${sports[s.id] === l ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div></div>`;
 const bioField = (pre, bio) => `<div class="field"><label for="${pre}-bio">Bio <span class="muted" style="font-weight:500">(optional)</span></label><textarea id="${pre}-bio" maxlength="${BIO_MAX}" placeholder="What you like to play, how competitive you are, anything players should know.">${esc(bio || '')}</textarea></div>`;
-const availFields = (pre, avail) => `<fieldset class="field bare"><legend class="lbl">When you’re usually free</legend><div class="slot-grid">${Object.keys(SLOTS).map(k => `<label class="slot"><input type="checkbox" id="${pre}-av-${k.replace(' ', '-')}" value="${k}" ${avail.includes(k) ? 'checked' : ''}><span>${k}</span></label>`).join('')}</div></fieldset>`;
+const availFields = (pre, avail) => `<fieldset class="field bare"><legend class="lbl">When you’re usually free</legend>
+  <p class="muted small" id="${pre}-av-hint">Pick every time that usually works. You can change this later.</p>
+  <div class="week" role="group" aria-describedby="${pre}-av-hint">
+    <span aria-hidden="true"></span>${SLOT_PARTS.map(([, part]) => `<span class="week-h" aria-hidden="true">${part}</span>`).join('')}
+    ${SLOT_DAYS.map(([d, day]) => `<span class="week-d" aria-hidden="true">${d}</span>${SLOT_PARTS.map(([k, part]) => { const key = `${d} ${k}`; return `<label class="week-c"><input type="checkbox" id="${pre}-av-${d}-${k}" value="${key}" ${avail.includes(key) ? 'checked' : ''}><span aria-hidden="true">${ICON.check || '✓'}</span><span class="sr-only">${day} ${part.toLowerCase()}</span></label>`; }).join('')}`).join('')}
+  </div></fieldset>`;
 const readSports = pre => { const o = {}; SPORTS.forEach(s => { const v = $(`#${pre}-sp-${s.id}`).value; if (v) o[s.id] = v; }); return o; };
-const readAvail = f => $$('.slot input', f).filter(x => x.checked).map(x => x.value);
+const readAvail = f => $$('.week-c input', f).filter(x => x.checked).map(x => x.value);
 
 /* Shrink a chosen image to a 320px square JPEG so it is small enough to save. */
 function loadPhoto(file) {
@@ -1354,7 +1363,7 @@ document.addEventListener('submit', async e => {
     if (setup && !pendingPhoto.o) return fail('Add a profile photo so players know who they’re meeting.', $('[data-pick-photo="o"]'));
     if (setup && !name) return fail('Add your first name.', $('#o-name'));
     if (!Object.keys(sports).length) return fail('Pick at least one sport and your level in it.', $(`#${pre}-sp-${SPORTS[0].id}`));
-    if (!avail.length) return fail('Pick at least one time you’re usually free.', $('.slot input', f));
+    if (!avail.length) return fail('Pick at least one time you’re usually free.', $('.week-c input', f));
     const btn = $('button[type="submit"]', f); btn.disabled = true;
     try {
       const user = window.RallyAuth && window.RallyAuth.user();
