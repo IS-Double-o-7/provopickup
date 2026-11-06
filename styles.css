@@ -105,9 +105,9 @@ section.sec{margin-top:36px}
 .chip.active{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .pill{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 10px;border-radius:999px;font:700 12px/1 var(--f-body);background:var(--surface-2);color:var(--muted);white-space:nowrap}
 .pill.ball{background:var(--ball);color:var(--ball-ink)}
-.pill.good{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good)}
-.pill.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
-.pill.clay{background:color-mix(in srgb,var(--clay) 15%,transparent);color:var(--clay)}
+.pill.good{background:color-mix(in srgb,var(--good) 15%,transparent);color:var(--good-ink,var(--good))}
+.pill.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn-ink,var(--warn))}
+.pill.clay{background:color-mix(in srgb,var(--clay) 15%,transparent);color:var(--clay-ink,var(--clay))}
 .avatar{--s:40px;width:var(--s);height:var(--s);flex:none;border-radius:50%;display:inline-grid;place-items:center;background:var(--av);color:#fff;font:700 calc(var(--s)*.38)/1 var(--f-body);letter-spacing:.02em;box-shadow:0 0 0 2px var(--surface)}
 .avatars{display:flex}
 .avatars .avatar+.avatar{margin-left:-8px}
@@ -428,6 +428,12 @@ img.avatar{padding:0}
 .week-c input:focus-visible+span{outline:2px solid var(--court);outline-offset:2px}
 
 /* ---------- accessibility fixes ---------- */
+/* Tinted status pills (Courts "Busy evenings", "Quiet"...). In light mode the
+   brand red, green and amber fall below 4.5:1 on their own 15% tint, so the
+   pill text uses a deeper shade. Dark mode already passes and keeps the brand color. */
+:root{--clay-ink:#9A3815;--good-ink:#176238;--warn-ink:#80540B}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--clay-ink:var(--clay);--good-ink:var(--good);--warn-ink:var(--warn)}}
+:root[data-theme="dark"]{--clay-ink:var(--clay);--good-ink:var(--good);--warn-ink:var(--warn)}
 /* The unread badge sits on --clay; in dark mode --clay is light, so white text fell to 2.6:1. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .count{color:#1A0B05}}
 :root[data-theme="dark"] .count{color:#1A0B05}

@@ -69,8 +69,8 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Games are still hosted by the demo `me` profile and every account sees the same calendar |
 | X1 | Message a match (chat saved in the database) | Not complete | Messages are sample data in the browser; moved to Sprint 2 |
 | X2 | Courts and Maps pages read venues from the database | Not complete | Still the hardcoded `PLACES` list |
-| X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules found no issues on login, sign-up, profile setup, Your profile and Play after #16 |
-| X4 | Every page is responsive on desktop and mobile | Not complete | Login, sign-up and profile setup checked at 8 sizes and Play at desktop and phone (#16); other pages not checked |
+| X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules (contrast with tinted backgrounds, labels, names, landmarks, headings, ARIA) finds no issues on Log in, Sign up, Profile setup, Your profile, Play, Messages, Calendar and Courts in light and dark mode after the Courts label fix; Home still has a heading-order note |
+| X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Reels, Challenge and Stats not checked yet |
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
 | X6 | The four Key Results update automatically from user activity | Not complete | Not started |
 | X7 | Admin portal | Not complete | Not started |
