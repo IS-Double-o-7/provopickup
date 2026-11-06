@@ -161,6 +161,8 @@ window.RallyAuth = {
 
 /* ---- start ---- */
 setMode(location.hash === '#signup' ? 'signup' : 'login');
+// After "Delete profile", confirm on the login page that it worked.
+try { if (sessionStorage.getItem('rally.accountDeleted')) { sessionStorage.removeItem('rally.accountDeleted'); say('Your profile and account were deleted.', 'ok'); } } catch (e) { /* storage blocked */ }
 db.auth.onAuthStateChange((event, session) => {
   if (session && session.user) { if (!user) showApp(session.user); }
   else if (event === 'SIGNED_OUT') showGate();
