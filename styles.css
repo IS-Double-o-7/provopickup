@@ -427,6 +427,18 @@ img.avatar{padding:0}
 .week-c input:checked+span{background:var(--court);border-color:var(--court);color:var(--court-ink)}
 .week-c input:focus-visible+span{outline:2px solid var(--court);outline-offset:2px}
 
+/* ---------- delete profile (Your profile) ---------- */
+.danger-zone{display:grid;gap:12px;border-top:1px solid var(--line);padding-top:14px}
+.danger-zone .between{gap:14px;align-items:center}
+.danger-title{font-weight:700;color:var(--clay-ink,var(--clay))}
+.danger-zone .btn.danger{color:var(--clay-ink,var(--clay))}
+.delete-confirm{display:grid;gap:10px;padding:14px;border-radius:12px;border:1.5px solid var(--clay);background:color-mix(in srgb,var(--clay) 6%,var(--surface))}
+.delete-confirm .row{flex-wrap:wrap;gap:8px}
+.delete-confirm input{flex:1 1 140px;height:40px;padding:0 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--fg);font:600 16px/1 var(--f-body);letter-spacing:.08em}
+.btn.danger-solid{background:var(--clay-ink,var(--clay));color:#fff;border:0}
+:root[data-theme="dark"] .btn.danger-solid{color:#1A0B05}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn.danger-solid{color:#1A0B05}}
+
 /* ---------- accessibility fixes ---------- */
 /* The unread badge sits on --clay; in dark mode --clay is light, so white text fell to 2.6:1. */
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .count{color:#1A0B05}}
