@@ -285,10 +285,12 @@ async function persistProfilePhoto(user, profileId, photo) {
   if (result.error) throw authError('Your profile fields were saved, but your photo could not be saved.', result.error);
   return photoUrl;
 }
-const rowToGame = r => ({
+// The signed-in player's own id for real accounts; the seed placeholder 'me' for demo accounts.
+const calendarMe = () => hasLiveAccount() ? requireProfileId() : ME;
+const rowToGame = (r, me = ME) => ({
   id: r.event_id, sport: r.interest_id, place: r.venue_id,
   date: r.event_date, time: String(r.event_time).slice(0, 5),
-  with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== ME),
+  with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== me),
   met: r.new_people_met || 0, note: r.note || '',
 });
 const lastMsg = c => c.messages[c.messages.length - 1];
@@ -518,10 +520,26 @@ const api = {
   async places(sportId = 'all') { return PLACES.filter(p => sportId === 'all' || p.sports.includes(sportId)).sort((a, b) => a.mi - b.mi); },
 
   async syncGames() {
-    const { data, error } = await db.from('event')
-      .select('event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)');
+    const cols = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)';
+    if (!hasLiveAccount()) {
+      const { data, error } = await db.from('event').select(cols);
+      if (error) { console.error('Could not load games', error); return { error }; }
+      S().games = data.map(r => rowToGame(r)); store.save(); return { error: null };
+    }
+    // Real accounts see only the games they are playing in. The host is always saved as an
+    // attendee too, so "my attendee rows" covers games I host and games I was invited to.
+    const me = requireProfileId();
+    const mine = await db.from('event_attendee').select('event_id').eq('profile_id', me);
+    if (mine.error) { console.error('Could not load games', mine.error); return { error: mine.error }; }
+    const ids = [...new Set((mine.data || []).map(r => r.event_id))];
+    if (!ids.length) { S().games = []; store.save(); return { error: null }; }
+    const { data, error } = await db.from('event').select(cols).in('event_id', ids);
     if (error) { console.error('Could not load games', error); return { error }; }
-    S().games = data.map(rowToGame); store.save(); return { error: null };
+    const games = data.map(r => rowToGame(r, me));
+    // Names shown on the calendar come from the player cache, so load anyone not cached yet.
+    try { await loadPlayersForIds([...new Set(games.flatMap(g => g.with))].filter(id => !person(id))); }
+    catch (e) { console.error('Could not load the players in your games', e); }
+    S().games = games; store.save(); return { error: null };
   },
 
   async games({ from, to } = {}) {
@@ -530,15 +548,16 @@ const api = {
   },
 
   async addGame(g) {
+    const me = calendarMe();
     const { data, error } = await db.from('event').insert({
-      host_id: ME, interest_id: g.sport, venue_id: g.place,
+      host_id: me, interest_id: g.sport, venue_id: g.place,
       event_date: g.date, event_time: g.time,
       note: g.note || null, new_people_met: g.met,
     }).select('event_id').single();
     if (error) { console.error('Could not save game', error); return { error }; }
     g.id = data.event_id;
     const status = g.date < todayISO() ? 'played' : 'going';
-    const people = [ME, ...g.with];
+    const people = [me, ...g.with];
     const { error: aErr } = await db.from('event_attendee')
       .insert(people.map(p => ({ event_id: g.id, profile_id: p, status })));
     if (aErr) console.error('Could not save who is playing', aErr);
@@ -556,14 +575,15 @@ const api = {
   },
 
   async restoreGame(g) {
+    const me = calendarMe();
     const { data, error } = await db.from('event').insert({
-      host_id: ME, interest_id: g.sport, venue_id: g.place,
+      host_id: me, interest_id: g.sport, venue_id: g.place,
       event_date: g.date, event_time: g.time,
       note: g.note || null, new_people_met: g.met,
     }).select('event_id').single();
     if (error) { console.error('Could not restore game', error); return; }
     const status = g.date < todayISO() ? 'played' : 'going';
-    await db.from('event_attendee').insert([ME, ...g.with].map(p => ({ event_id: data.event_id, profile_id: p, status })));
+    await db.from('event_attendee').insert([me, ...g.with].map(p => ({ event_id: data.event_id, profile_id: p, status })));
     g.id = data.event_id; S().games.push(g); store.save();
   },
 
@@ -1409,9 +1429,10 @@ function startApp() {
 // player sets up their profile before seeing the app.
 // Messages still live in this browser. Clear them when a different account signs
 // in, so every player starts with an empty inbox (and never sees sample chats).
+// Games are cleared too, so another account's cached calendar is never shown first.
 function claimLocalData(user) {
   if (!user || user.demo || S().accountId === user.id) return;
-  Object.assign(S(), { accountId: user.id, conversations: [], matches: [] });
+  Object.assign(S(), { accountId: user.id, conversations: [], matches: [], games: [] });
   store.save();
 }
 async function boot(user) {
