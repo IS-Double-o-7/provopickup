@@ -297,15 +297,44 @@ create policy "write own choices" on choice for all to authenticated
   using (swiper = public.current_profile_id())
   with check (swiper = public.current_profile_id());
 
--- Calendar: anyone may read the schedule; only a signed-in player may change it.
--- Writes are not yet scoped to the owner -- see the note above and Issue #21.
-create policy "read event"   on event for select to anon, authenticated using (true);
-create policy "book event"   on event for insert to authenticated with check (true);
-create policy "cancel event" on event for delete to authenticated using (true);
+-- Calendar: anyone may read the schedule; only the host may change their own game
+-- (migration 010).
+--
+-- Reads are still open on purpose. Whether the calendar should be public is a
+-- product decision that has not been made (Issues #21 and #41), so this file does
+-- not pre-empt it. Writes are owner-scoped, which is what closed the real hole:
+-- before 010 any signed-in player could delete any other player's game, including
+-- one they could not see on their own calendar.
+create policy "read event" on event for select to anon, authenticated using (true);
 
-create policy "read attendees"   on event_attendee for select to anon, authenticated using (true);
-create policy "add attendees"    on event_attendee for insert to authenticated with check (true);
-create policy "remove attendees" on event_attendee for delete to authenticated using (true);
+create policy "book own event" on event for insert to authenticated
+  with check (host_id = public.current_profile_id());
+
+create policy "cancel own event" on event for delete to authenticated
+  using (host_id = public.current_profile_id());
+
+-- No UPDATE policy, so a booked game cannot be edited in place. Nothing in the app
+-- updates one; reschedule would need its own card and its own policy.
+
+create policy "read attendees" on event_attendee for select to anon, authenticated using (true);
+
+-- Roster changes are host-only, which is exactly what the app does: api.addGame
+-- inserts the host plus the invited players, always as the host. Joining a game
+-- yourself, or leaving one you were invited to, are not features yet; each would
+-- need its own policy.
+create policy "add attendee to own game" on event_attendee for insert to authenticated
+  with check (exists (
+    select 1 from event e
+     where e.event_id = event_attendee.event_id
+       and e.host_id  = public.current_profile_id()
+  ));
+
+create policy "remove attendee from own game" on event_attendee for delete to authenticated
+  using (exists (
+    select 1 from event e
+     where e.event_id = event_attendee.event_id
+       and e.host_id  = public.current_profile_id()
+  ));
 
 -- Second layer, so the block does not rest on policy evaluation alone.
 revoke insert, update, delete on event          from anon;

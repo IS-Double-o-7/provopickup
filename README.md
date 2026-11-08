@@ -203,9 +203,10 @@ row-level security policies allow. Anyone may read the public profile columns
 signed-in player may write only their own profile, sports, availability, photo and
 swipes, and may send a message only as themselves and only to a confirmed mutual
 match. Private contact details, swipes, messages and reports are readable only by
-their owner. The calendar's `event` and `event_attendee` may be read by anyone but
-changed only by a signed-in player; those writes are not yet scoped to the game's
-host, because the calendar still books under the seed placeholder profile (Issue #21).
+their owner. The calendar's `event` and `event_attendee` may be read by anyone, but
+only the host may cancel their own game or change who is playing in it (migration
+010). Whether the calendar should stay publicly readable has not been decided
+(Issues #21 and #41), so reads are deliberately still open.
 
 The **`service_role` key**, which bypasses all security, is never committed and is not
 in this repository. `.env` is listed in `.gitignore`.
