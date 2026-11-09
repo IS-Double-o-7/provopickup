@@ -1361,13 +1361,29 @@ document.addEventListener('submit', async e => {
     if (res.error) return toast('Could not save the game. Check your connection and try again.');
     closeModal();
     const past = g.date < todayISO();
+    let chatFailed = false;
     if (g.with[0] && notify) {
       const c = S().conversations.find(x => x.with === g.with[0]);
-      if (c) { const r = await api.send(c.id, `${past ? 'Logged our game' : 'Added a game'}: ${sport(g.sport).name} on ${fmtDay(g.date)} at ${fmtTime(g.time)}, ${place(g.place).name}.`, 'game'); if (!past) setTimeout(async () => { await api.demoReply(c.id, ui.route === 'messages' && ui.conv === c.id); if (ui.route === 'messages') renderChat(); updateBadges(); }, 1500); if (r.done && !res.done) res.done = r.done; }
+      // The game is already saved in Postgres by this point. api.send can throw once
+      // PR #39 lands (it rejects a send the database refuses), so a failed chat post
+      // must not abort the rest of this handler and leave the calendar unrendered.
+      if (c) {
+        try {
+          const r = await api.send(c.id, `${past ? 'Logged our game' : 'Added a game'}: ${sport(g.sport).name} on ${fmtDay(g.date)} at ${fmtTime(g.time)}, ${place(g.place).name}.`, 'game');
+          if (!past) setTimeout(async () => { await api.demoReply(c.id, ui.route === 'messages' && ui.conv === c.id); if (ui.route === 'messages') renderChat(); updateBadges(); }, 1500);
+          if (r.done && !res.done) res.done = r.done;
+        } catch (error) {
+          // toast() reuses one element, so warning here would be erased by the
+          // success toast below. Flag it and let the final toast say it instead.
+          console.error('Could not post the game to the chat', error);
+          chatFailed = true;
+        }
+      }
     }
     ui.selDate = g.date; const d = parseISO(g.date); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
     render();
-    if (res.done) challengeToast(res.done);
+    if (chatFailed) toast(past ? 'Game logged, but we could not message your friend.' : 'Game added, but we could not message your friend.');
+    else if (res.done) challengeToast(res.done);
     else toast(past ? 'Game logged. Your stats are updated.' : `Added for ${fmtDay(g.date)} at ${fmtTime(g.time)}`, ui.route !== 'calendar' ? { label: 'View', run: () => go('calendar') } : null);
   }
   if (f.id === 'profileForm' || f.id === 'onboardForm') {
