@@ -204,10 +204,13 @@ row-level security policies allow. Anyone may read the public profile columns
 signed-in player may write only their own profile, sports, availability, photo and
 swipes, and may send a message only as themselves and only to a confirmed mutual
 match. Private contact details, swipes, messages and reports are readable only by
-their owner. The calendar's `event` and `event_attendee` may be read by anyone, but
-only the host may cancel their own game or change who is playing in it (migration
-010). Whether the calendar should stay publicly readable has not been decided
-(Issues #21 and #41), so reads are deliberately still open.
+their owner. The calendar's `event` and `event_attendee` may be read by anyone, and
+**any signed-in player may still book or cancel any game** — a known, open gap.
+Migration 010 scoped those writes to the game's host, but migration 011 reverted it:
+the app books every game as the shared placeholder `me`, so the owner-only rule
+refused every booking on the live site. Ownership scoping returns together with the
+front-end fix (PR #42). Whether the calendar should stay publicly readable has not
+been decided (Issues #21 and #41), so reads are deliberately still open.
 
 The **`service_role` key**, which bypasses all security, is never committed and is not
 in this repository. `.env` is listed in `.gitignore`.
