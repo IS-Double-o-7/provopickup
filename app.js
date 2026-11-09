@@ -1133,7 +1133,7 @@ function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
       <div class="form-grid">
         <div class="field"><label for="g-sport">Sport</label><select id="g-sport">${order.map(id => `<option value="${id}" ${id === sp ? 'selected' : ''}>${sport(id).icon} ${sport(id).name}</option>`).join('')}</select></div>
         <div class="field"><label for="g-place">Where</label><select id="g-place">${placeOptions(sp, pl)}</select></div>
-        <div class="field"><label for="g-date">Date</label><input type="date" id="g-date" value="${date}" required></div>
+        <div class="field"><label for="g-date">Date</label><input type="date" id="g-date" value="${date}" min="${iso(addDays(today0(), -30))}" max="${iso(addDays(today0(), 365))}" required></div>
         <div class="field"><label for="g-time">Time</label><input type="time" id="g-time" value="18:00" required></div>
         <div class="field"><label for="g-with">Playing with</label><select id="g-with"><option value="">Open game</option>${S().matches.map(id => `<option value="${id}" ${id === withId ? 'selected' : ''}>${esc(person(id).name)}</option>`).join('')}</select></div>
         <div class="field"><label for="g-met">New people met</label><input type="number" id="g-met" min="0" max="30" value="0" inputmode="numeric"></div>
@@ -1326,6 +1326,8 @@ document.addEventListener('submit', async e => {
   if (f.id === 'gameForm') {
     const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: Math.max(0, Number($('#g-met').value) || 0), note: $('#g-note').value.trim() };
     if (!g.date || !g.time) return toast('Add a date and a time to save the game.');
+    // The date input is bounded, but typed values and the demo path bypass it.
+    if (g.date < iso(addDays(today0(), -30)) || g.date > iso(addDays(today0(), 365))) return toast('Pick a date in the last 30 days or the next year.');
     const notify = $('#g-notify').checked, res = await api.addGame(g);
     if (res.error) return toast('Could not save the game. Check your connection and try again.');
     closeModal();
