@@ -238,13 +238,19 @@ section.sec{margin-top:36px}
 .cal-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;align-items:start}
 .cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:14px}
 .cal-dow{padding:6px 0;text-align:center;font:700 11px/1 var(--f-body);letter-spacing:.1em;color:var(--muted)}
-.cal-day{aspect-ratio:1;max-height:64px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-weight:600;font-variant-numeric:tabular-nums}
+.cal-day{aspect-ratio:1;max-height:64px;min-width:0;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-weight:600;font-variant-numeric:tabular-nums}
 .cal-day:hover{background:var(--surface-2)}
+.cal-day:focus-visible{position:relative;z-index:1}
 .cal-day.out{color:var(--muted);opacity:.5}
 .cal-day.today{box-shadow:inset 0 0 0 2px var(--court)}
 .cal-day.sel{background:var(--court);color:var(--court-ink)}
 .cal-dots{display:flex;gap:3px;height:6px}
 .cal-dots i{width:6px;height:6px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.5)}
+.cal-month-head h2{margin:0}
+.cal-month-head p{margin:3px 0 0}
+.cal-legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.cal-legend span{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.cal-legend i{width:8px;height:8px;border-radius:50%}
 .game{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}
 .game:first-of-type{border-top:0}
 .game b{display:block;font-variant-numeric:tabular-nums}
