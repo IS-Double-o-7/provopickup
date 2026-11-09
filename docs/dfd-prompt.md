@@ -153,3 +153,82 @@ Say this out loud in the review if you are asked:
   wiring is waiting in PR #39.
 - A DFD shows the *designed* flow, so drawing them is correct — just do not
   claim they are all live.
+
+
+---
+
+# Level 1 — AI match-personalization workflow
+
+**This is what the submission card actually asks for at Level 1.** It is not a
+decomposition of the whole system; it is one workflow, end to end.
+
+**Before generating:** the team has to confirm which AI automation this is. The
+architecture diagram currently shows a *game announcement* automation (new game
+-> AI writes an invite -> Discord). The card describes a *match personalization*
+automation (mutual match -> AI writes why you two match). Those are different
+features. Confirm with the AI automation owner, then fix whichever diagram is
+stale.
+
+Replace `AI provider (TBD)` below once the team picks one. Never draw a key,
+token, or webhook URL on the diagram — show them as "secret, server-side only".
+
+```text
+Create a Level 1 workflow diagram for one automated feature in Rally Provo, a
+pickup-sports web app. Keep it simple and readable: a single left-to-right
+pipeline, no branching except where stated.
+
+Draw three labeled boundary containers as large dashed rectangles:
+- "Browser (untrusted)" on the left
+- "Supabase (trusted, server-side)" in the middle
+- "External (third party)" on the right
+Every shape must sit inside exactly one container. Label the middle container
+"trust boundary: secrets live here, never in the browser".
+
+Steps, left to right, as numbered rounded rectangles:
+1.0 Mutual match detected  (inside Browser)
+2.0 Edge Function triggered  (inside Supabase)
+3.0 Retrieve approved profile fields  (inside Supabase)
+4.0 Call AI provider (TBD)  (arrow crosses into External)
+5.0 Validate AI response  (inside Supabase)
+6.0 Save personalized explanation  (inside Supabase)
+7.0 Display explanation to player  (inside Browser)
+
+Data stores as open-ended rectangles below the Supabase container:
+D1 profile
+D2 choice
+D3 automation_run
+
+Flows, each with a short label:
+1.0 -> 2.0: match event
+D2 choice -> 3.0: confirmed mutual match
+D1 profile -> 3.0: bio, sports, skill level, interests
+3.0 -> 4.0: approved fields only
+4.0 -> 5.0: generated explanation
+5.0 -> 6.0: validated text
+5.0 -> 6.0: safe fallback text   (draw as a second, dashed arrow labeled "if invalid")
+6.0 -> D3 automation_run: request, output, status, timestamp
+6.0 -> 7.0: saved explanation
+7.0 -> 1.0 is not needed; 7.0 is the end of the pipeline
+
+Also draw one note box attached to 4.0: "API key stored in Edge Function
+secrets. Never sent to the browser."
+
+Layout: one horizontal row for 1.0 through 7.0, evenly spaced, at least 120 px
+between shapes. Data stores in a row underneath, connected with short vertical
+lines. Orthogonal connectors only. No crossing lines, no label on top of a line.
+12 pt text, plain black lines, one light fill per container, no icons or
+shadows.
+```
+
+## Level 0 for this card
+
+Do **not** use the context-diagram prompt above for the submission. The card's
+Level 0 is the system architecture picture — `docs/architecture.png` already
+covers almost all of it. Two gaps to close first:
+
+1. **Map provider is missing.** Add a Google Maps box under External services,
+   with a labeled arrow (for example "court coordinates -> map tiles").
+2. **Trust boundaries are not marked.** System boundaries and hosting are there,
+   but add explicit labels: the browser holds only the publishable key and is
+   guarded by RLS; Edge Function secrets and any service-role key are
+   server-side only and never reach the browser.
