@@ -560,7 +560,13 @@ const api = {
     const people = [me, ...g.with];
     const { error: aErr } = await db.from('event_attendee')
       .insert(people.map(p => ({ event_id: g.id, profile_id: p, status })));
-    if (aErr) console.error('Could not save who is playing', aErr);
+    if (aErr) {
+      // The calendar is keyed off attendee rows, so a game with none is invisible to everyone.
+      // Remove it again instead of leaving a row nobody can see.
+      console.error('Could not save who is playing', aErr);
+      await db.from('event').delete().eq('event_id', g.id);
+      return { error: aErr };
+    }
     S().games.push(g); store.save();
     const t = todaysChallenge();
     return { game: g, done: t.auto === 'game' && g.date >= todayISO() ? completeToday() : null, error: null };
@@ -569,8 +575,11 @@ const api = {
   async removeGame(id) {
     const s = S(), i = s.games.findIndex(g => g.id === id);
     if (i < 0) return null;
-    const { error } = await db.from('event').delete().eq('event_id', id);
+    // A delete the database refuses (not the host) is not an error: it just removes 0 rows.
+    // Ask for the deleted rows back so "nothing removed" can be told apart from "removed".
+    const { data, error } = await db.from('event').delete().eq('event_id', id).select('event_id');
     if (error) { console.error('Could not remove game', error); return null; }
+    if (!data || !data.length) { toast('Only the person who planned this game can cancel it.'); return null; }
     const [g] = s.games.splice(i, 1); store.save(); return g;
   },
 
@@ -583,7 +592,12 @@ const api = {
     }).select('event_id').single();
     if (error) { console.error('Could not restore game', error); return; }
     const status = g.date < todayISO() ? 'played' : 'going';
-    await db.from('event_attendee').insert([me, ...g.with].map(p => ({ event_id: data.event_id, profile_id: p, status })));
+    const { error: aErr } = await db.from('event_attendee').insert([me, ...g.with].map(p => ({ event_id: data.event_id, profile_id: p, status })));
+    if (aErr) {
+      console.error('Could not restore who is playing', aErr);
+      await db.from('event').delete().eq('event_id', data.event_id);
+      return;
+    }
     g.id = data.event_id; S().games.push(g); store.save();
   },
 
