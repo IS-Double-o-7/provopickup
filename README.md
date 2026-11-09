@@ -47,6 +47,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | L8 | Log out always returns to the login page | Not complete | Tested against a stand-in, including a failed sign-out request (#15); not yet checked live |
 | L9 | Phone numbers and birthdays are visible only to their owner | Complete | Live database: a signed-out client reads 0 rows from `profile_private` and cannot read `auth_uid` (#8, #11) |
 | L10 | A user cannot create or change another user's profile | Complete | Live database: an update against another profile changes 0 rows; a second profile per account is rejected (#7) |
+| L11 | A player can permanently delete their profile and login from **Your profile** (type DELETE to confirm) | Not complete | Works against a stand-in database: profile, photo, sports, availability, swipes and login removed, old password rejected. Needs migration 009 applied, then a live check |
 
 ### Matching (Play page)
 
@@ -303,6 +304,8 @@ on their profile.
   column-privacy fix (#11) are applied to the live Supabase project.
   Migration 007 widens availability to mornings, afternoons and evenings on every day
   (21 slots); it must be applied before the profile page that offers them goes live.
+  Migration 009 adds `delete_my_account()`, the server-side function behind **Delete
+  profile**; it must be applied before that button works on the live site.
 - The sample calendar data stays attached to the demo `me` profile.
 
 ---
