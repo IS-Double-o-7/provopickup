@@ -35,6 +35,10 @@ const relTime = ts => {
   if (diff < 7 * DAY) return new Date(ts).toLocaleDateString('en-US', { weekday: 'short' });
   return fmtShort(new Date(ts));
 };
+const messageTime = ts => {
+  const date = new Date(ts);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+};
 const hue = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const initials = n => (n || '').replace('@', '').split(/[\s._]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
 const avatar = (name, size = 40) => `<span class="avatar" style="--s:${size}px;--av:hsl(${hue(name || 'You')} 42% 40%)" aria-hidden="true">${esc(initials(name || 'You'))}</span>`;
@@ -888,8 +892,8 @@ V.messages = async () => {
     <header class="page-head"><div><p class="eyebrow">${plural(convs.length, 'match', 'matches')}</p><h1>Messages</h1></div>
       <button class="btn ghost" data-route="play">Find more players</button></header>
     <div class="msg-layout ${ui.chatOpen ? 'chat-open' : ''}" id="msgLayout">
-      <aside class="conv-list" id="convList" aria-label="Conversations"></aside>
-      <section class="chat" id="chat" aria-label="Conversation"></section>
+      <aside class="conv-list" id="convList" aria-label="Your conversations"></aside>
+      <section class="chat" id="chat" aria-label="Selected conversation" aria-live="polite"></section>
     </div>`;
   await renderConvList(convs);
   await renderChat();
@@ -897,50 +901,70 @@ V.messages = async () => {
 async function renderConvList(convs) {
   convs = convs || await api.conversations();
   $('#convList').innerHTML = convs.length ? convs.map(c => {
-    const p = person(c.with), m = lastMsg(c);
-    return `<button class="conv ${c.id === ui.conv ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-action="open-conv" data-id="${c.id}">${avatar(p.name, 44)}<span class="min0"><strong>${esc(p.name)}</strong><span class="last">${m.from === 'me' ? 'You: ' : ''}${esc(m.text)}</span></span><span><time>${relTime(m.at)}</time>${c.unread ? '<i class="dot"></i>' : ''}</span></button>`;
-  }).join('') : `<div class="empty"><h3>No matches yet</h3><p class="muted">Like a few players in Play. When it’s mutual, the chat shows up here.</p></div>`;
+    const p = person(c.with), m = lastMsg(c), selected = c.id === ui.conv;
+    const preview = m ? `${m.from === 'me' ? 'You: ' : ''}${m.text}` : 'Start a conversation';
+    const unreadLabel = c.unread ? `, ${c.unread} unread ${c.unread === 1 ? 'message' : 'messages'}` : '';
+    const stamp = m ? relTime(m.at) : '';
+    const isoStamp = m && !Number.isNaN(new Date(m.at).getTime()) ? new Date(m.at).toISOString() : '';
+    return `<button type="button" class="conv ${selected ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-action="open-conv" data-id="${esc(c.id)}" aria-pressed="${selected}" aria-label="Open conversation with ${esc(p?.name || 'player')}${unreadLabel}">${avatar(p?.name || 'Player', 44)}<span class="min0"><strong>${esc(p?.name || 'Player')}</strong><span class="last">${esc(preview)}</span></span><span class="conv-meta">${isoStamp ? `<time datetime="${isoStamp}">${stamp}</time>` : ''}${c.unread ? '<i class="dot" aria-hidden="true"></i>' : ''}</span></button>`;
+  }).join('') : `<div class="empty conv-empty"><span class="empty-icon">${ICON.messages}</span><h3>No matches yet</h3><p class="muted">Like a few players in Play. When it’s mutual, your conversations will show up here.</p><button class="btn sm" data-route="play">Find players</button></div>`;
 }
 async function renderChat() {
   const box = $('#chat'); if (!box) return;
   const c = ui.conv ? await api.conversation(ui.conv) : null;
-  if (!c) { box.innerHTML = `<div class="empty"><h3>Pick a conversation</h3></div>`; return; }
+  if (!c) { box.innerHTML = `<div class="empty chat-empty"><span class="empty-icon">${ICON.messages}</span><h3>Select a conversation</h3><p class="muted">Choose a match from your inbox to see messages and plan a game together.</p></div>`; return; }
   if (isWide() || ui.chatOpen) { await api.markRead(c.id); updateBadges(); }
   const p = person(c.with), me = S().profile, draft = $('#chatInput') ? $('#chatInput').value : '';
   let lastDay = '';
-  const bubbles = c.messages.map(m => {
+  const messages = Array.isArray(c.messages) ? c.messages : [];
+  const bubbles = messages.map(m => {
     const k = iso(new Date(m.at)); let sep = '';
     if (k !== lastDay) { lastDay = k; sep = `<div class="day-sep">${relDay(k) === 'Today' || relDay(k) === 'Yesterday' ? relDay(k) : fmtDay(k)}</div>`; }
-    return sep + `<div class="bubble ${m.kind === 'game' ? 'game' : m.from}">${esc(m.text)}</div>`;
+    const date = new Date(m.at), isoStamp = Number.isNaN(date.getTime()) ? '' : date.toISOString();
+    const label = m.from === 'me' ? 'You' : (p?.name || 'Match');
+    return sep + `<article class="bubble ${m.kind === 'game' ? 'game' : m.from}"><span>${esc(m.text)}</span>${isoStamp ? `<time datetime="${isoStamp}" aria-label="${label}, ${date.toLocaleString('en-US')}">${messageTime(m.at)}</time>` : ''}</article>`;
   }).join('');
-  const shared = p.sports.find(([s]) => me.sports[s]);
-  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, place(p.court) ? `Meet at ${place(p.court).name}?` : null].filter(Boolean);
+  const shared = p?.sports?.find(([s]) => me.sports[s]);
+  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, place(p?.court) ? `Meet at ${place(p.court).name}?` : null].filter(Boolean);
+  const sports = p?.sports?.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ') || 'Rally Provo match';
   box.innerHTML = `
     <div class="chat-head">
       <button class="icon-btn back-btn" data-action="conv-back" aria-label="Back to conversations">${ICON.back}</button>
-      ${avatar(p.name, 40)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ')}</small></div>
-      <button class="btn ghost sm" data-action="add-game" data-with="${p.id}" data-sport="${shared ? shared[0] : p.sports[0][0]}">${ICON.calendar} Plan a game</button>
+      ${avatar(p?.name || 'Player', 40)}<div class="grow"><strong>${esc(p?.name || 'Your match')}</strong><small class="muted">${esc(sports)}</small></div>
+      <button class="btn ghost sm" data-action="add-game" data-with="${esc(p?.id || '')}" data-sport="${shared ? shared[0] : p?.sports?.[0]?.[0] || ''}">${ICON.calendar} Plan a game</button>
     </div>
-    <div class="chat-body" id="chatBody">${bubbles}${ui.typing[c.id] ? '<div class="typing" aria-label="Typing"><i></i><i></i><i></i></div>' : ''}</div>
-    <div class="suggest">${sugg.map(t => `<button class="chip" data-action="suggest" data-text="${esc(t)}">${esc(t)}</button>`).join('')}<button class="chip" data-action="add-game" data-with="${p.id}">${ICON.calendar.replace('<svg', '<svg width="15" height="15"')} Plan a game</button></div>
-    <form class="chat-form" id="chatForm" data-conv="${c.id}"><input id="chatInput" autocomplete="off" maxlength="500" placeholder="Message ${esc(p.name.split(' ')[0])}…" aria-label="Message ${esc(p.name)}"><button class="btn" aria-label="Send">${ICON.send}</button></form>`;
+    <div class="chat-body" id="chatBody" role="log" aria-label="Messages with ${esc(p?.name || 'your match')}" aria-live="polite" aria-relevant="additions text">${bubbles || `<p class="muted chat-start">Say hello to ${esc(p?.name?.split(' ')[0] || 'your match')} and start planning your next game.</p>`}${ui.typing[c.id] ? '<div class="typing" role="status" aria-label="Your match is typing"><i></i><i></i><i></i></div>' : ''}</div>
+    <div class="suggest" aria-label="Suggested messages">${sugg.map(t => `<button type="button" class="chip" data-action="suggest" data-text="${esc(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip" data-action="add-game" data-with="${esc(p?.id || '')}">${ICON.calendar.replace('<svg', '<svg width="15" height="15"')} Plan a game</button></div>
+    <form class="chat-form" id="chatForm" data-conv="${esc(c.id)}"><label class="sr-only" for="chatInput">Message ${esc(p?.name || 'your match')}</label><input id="chatInput" autocomplete="off" maxlength="500" placeholder="Message ${esc(p?.name?.split(' ')[0] || 'your match')}…" aria-label="Message ${esc(p?.name || 'your match')}"><button class="btn" id="chatSend" aria-label="Send message to ${esc(p?.name || 'your match')}">${ICON.send}</button><span id="chatStatus" class="sr-only" role="status" aria-live="polite"></span></form>`;
   $('#chatInput').value = draft;
   const body = $('#chatBody'); body.scrollTop = body.scrollHeight;
   renderConvList();
 }
 async function sendMessage(convId, text) {
-  const res = await api.send(convId, text);
-  ui.typing[convId] = true;
-  await renderChat(); $('#chatInput') && $('#chatInput').focus();
-  if (res.done) challengeToast(res.done);
-  setTimeout(async () => {
-    const viewing = ui.route === 'messages' && ui.conv === convId && (isWide() || ui.chatOpen);
-    await api.demoReply(convId, viewing);
-    ui.typing[convId] = false;
-    if (ui.route === 'messages') await renderChat();
-    updateBadges();
-    if (!viewing) { const p = person((await api.conversation(convId)).with); toast(`${p.name.split(' ')[0]} replied`, { label: 'Open', run: () => openConv(convId) }); }
-  }, 1300 + Math.random() * 900);
+  const status = $('#chatStatus'), send = $('#chatSend');
+  if (status) status.textContent = 'Sending message…';
+  if (send) send.disabled = true;
+  try {
+    const res = await api.send(convId, text);
+    ui.typing[convId] = true;
+    await renderChat(); $('#chatInput') && $('#chatInput').focus();
+    const nextStatus = $('#chatStatus'); if (nextStatus) nextStatus.textContent = 'Message sent.';
+    if (res.done) challengeToast(res.done);
+    setTimeout(async () => {
+      const viewing = ui.route === 'messages' && ui.conv === convId && (isWide() || ui.chatOpen);
+      try { await api.demoReply(convId, viewing); } catch (error) { console.error('Could not refresh the demo reply', error); }
+      ui.typing[convId] = false;
+      if (ui.route === 'messages') await renderChat();
+      updateBadges();
+      if (!viewing) { const c = await api.conversation(convId), p = c && person(c.with); if (p) toast(`${p.name.split(' ')[0]} replied`, { label: 'Open', run: () => openConv(convId) }); }
+    }, 1300 + Math.random() * 900);
+  } catch (error) {
+    console.error('Could not send message', error);
+    const input = $('#chatInput'), retryStatus = $('#chatStatus'), retryButton = $('#chatSend');
+    if (input) { input.value = text; input.focus(); }
+    if (retryStatus) retryStatus.textContent = 'Message could not be sent. Your draft is still here; please try again.';
+    if (retryButton) retryButton.disabled = false;
+  }
 }
 function openConv(id) { ui.conv = id; ui.chatOpen = true; closeModal(); if (ui.route === 'messages') V.messages(); else go('messages'); }
 
@@ -1361,7 +1385,7 @@ document.addEventListener('submit', async e => {
   const f = e.target;
   if (f.id === 'chatForm') {
     const i = $('#chatInput'), text = i.value.trim(); if (!text) return;
-    i.value = ''; sendMessage(f.dataset.conv, text);
+    i.value = ''; await sendMessage(f.dataset.conv, text);
   }
   if (f.id === 'gameForm') {
     const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: Math.max(0, Number($('#g-met').value) || 0), note: $('#g-note').value.trim() };
@@ -1370,13 +1394,29 @@ document.addEventListener('submit', async e => {
     if (res.error) return toast('Could not save the game. Check your connection and try again.');
     closeModal();
     const past = g.date < todayISO();
+    let chatFailed = false;
     if (g.with[0] && notify) {
       const c = S().conversations.find(x => x.with === g.with[0]);
-      if (c) { const r = await api.send(c.id, `${past ? 'Logged our game' : 'Added a game'}: ${sport(g.sport).name} on ${fmtDay(g.date)} at ${fmtTime(g.time)}, ${place(g.place).name}.`, 'game'); if (!past) setTimeout(async () => { await api.demoReply(c.id, ui.route === 'messages' && ui.conv === c.id); if (ui.route === 'messages') renderChat(); updateBadges(); }, 1500); if (r.done && !res.done) res.done = r.done; }
+      // The game is already saved in Postgres by this point. api.send can throw once
+      // PR #39 lands (it rejects a send the database refuses), so a failed chat post
+      // must not abort the rest of this handler and leave the calendar unrendered.
+      if (c) {
+        try {
+          const r = await api.send(c.id, `${past ? 'Logged our game' : 'Added a game'}: ${sport(g.sport).name} on ${fmtDay(g.date)} at ${fmtTime(g.time)}, ${place(g.place).name}.`, 'game');
+          if (!past) setTimeout(async () => { await api.demoReply(c.id, ui.route === 'messages' && ui.conv === c.id); if (ui.route === 'messages') renderChat(); updateBadges(); }, 1500);
+          if (r.done && !res.done) res.done = r.done;
+        } catch (error) {
+          // toast() reuses one element, so warning here would be erased by the
+          // success toast below. Flag it and let the final toast say it instead.
+          console.error('Could not post the game to the chat', error);
+          chatFailed = true;
+        }
+      }
     }
     ui.selDate = g.date; const d = parseISO(g.date); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
     render();
-    if (res.done) challengeToast(res.done);
+    if (chatFailed) toast(past ? 'Game logged, but we could not message your friend.' : 'Game added, but we could not message your friend.');
+    else if (res.done) challengeToast(res.done);
     else toast(past ? 'Game logged. Your stats are updated.' : `Added for ${fmtDay(g.date)} at ${fmtTime(g.time)}`, ui.route !== 'calendar' ? { label: 'View', run: () => go('calendar') } : null);
   }
   if (f.id === 'profileForm' || f.id === 'onboardForm') {
