@@ -109,8 +109,7 @@ section.sec{margin-top:36px}
 .pill.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn-ink,var(--warn))}
 .pill.clay{background:color-mix(in srgb,var(--clay) 15%,transparent);color:var(--clay-ink,var(--clay))}
 .avatar{--s:40px;width:var(--s);height:var(--s);flex:none;border-radius:50%;display:inline-grid;place-items:center;background:var(--av);color:#fff;font:700 calc(var(--s)*.38)/1 var(--f-body);letter-spacing:.02em;box-shadow:0 0 0 2px var(--surface)}
-.avatars{display:flex}
-.avatars .avatar+.avatar{margin-left:-8px}
+.avatars{display:flex;flex-wrap:wrap;gap:6px}
 .tabs{display:inline-flex;gap:2px;padding:4px;border-radius:999px;background:var(--surface-2)}
 .tabs button{height:34px;padding:0 14px;border-radius:999px;font-weight:600;font-size:14px;color:var(--muted)}
 .tabs button.active{background:var(--surface);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
