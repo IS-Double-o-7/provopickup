@@ -464,6 +464,22 @@ const api = {
     }
     delete S().swipes[id]; store.save();
   },
+  /** Permanently delete the signed-in player's account: photos in Storage, then
+   *  the profile and login through the delete_my_account() RPC (migration 009). */
+  async deleteAccount() {
+    const user = window.RallyAuth && window.RallyAuth.user();
+    if (!user?.id || user.demo) throw authError('Sign in to delete your account.');
+    const bucket = db.storage.from(RALLY_CONFIG.PROFILE_PHOTO_BUCKET || 'profile-photos');
+    const { data: files, error: listError } = await bucket.list(user.id);
+    if (listError) console.error('Could not list profile photos', listError);
+    if (files && files.length) {
+      const { error: removeError } = await bucket.remove(files.map(f => `${user.id}/${f.name}`));
+      if (removeError) console.error('Could not remove profile photos', removeError);
+    }
+    const { error } = await db.rpc('delete_my_account');
+    if (error) throw authError('Your account could not be deleted. Please try again.', error);
+  },
+
   async resetPasses() {
     if (hasLiveAccount()) {
       const { error } = await db.from('choice').delete().eq('swiper', requireProfileId()).eq('no', true);
@@ -1313,7 +1329,18 @@ async function openProfile() {
       ${availFields('p', p.avail)}
       <p class="auth-msg" id="p-msg" role="alert" data-kind="error" hidden></p>
       <div class="row"><button class="btn" type="submit">Save profile</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
-      ${window.RallyAuth && window.RallyAuth.user() ? `<div class="auth-account"><p class="muted small">Signed in as <b>${esc(window.RallyAuth.user().email)}</b></p><button class="btn ghost sm" type="button" data-auth="sign-out">Log out</button></div>` : ''}
+      ${window.RallyAuth && window.RallyAuth.user() ? `<div class="auth-account"><p class="muted small">Signed in as <b>${esc(window.RallyAuth.user().email)}</b></p><button class="btn ghost sm" type="button" data-auth="sign-out">Log out</button></div>
+      <div class="danger-zone" id="dangerZone">
+        <div class="between"><div><p class="danger-title">Delete profile</p><p class="muted small">Permanently removes your profile, photo, sports, swipes, matches, messages and login.</p></div>
+        <button class="btn danger sm" type="button" data-action="delete-account-start" aria-expanded="false" aria-controls="deleteConfirm">Delete profile</button></div>
+        <div class="delete-confirm" id="deleteConfirm" hidden>
+          <label for="deleteWord">This can’t be undone. Type <b>DELETE</b> to confirm.</label>
+          <div class="row"><input id="deleteWord" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="deleteMsg">
+          <button class="btn danger-solid sm" type="button" data-action="delete-account-confirm">Delete forever</button>
+          <button class="btn ghost sm" type="button" data-action="delete-account-cancel">Cancel</button></div>
+          <p class="auth-msg" id="deleteMsg" role="alert" data-kind="error" hidden></p>
+        </div>
+      </div>` : ''}
     </form>`);
 }
 function openComposer() {
@@ -1357,6 +1384,19 @@ document.addEventListener('click', async e => {
     case 'play-person': saveUI('playSport', 'all'); ui.focus = id; closeModal(); go('play'); break;
     case 'retry-play': render(); break;
     case 'swipe': doSwipe(a.dataset.dir); break;
+    case 'delete-account-start': { const c = $('#deleteConfirm'); c.hidden = false; a.setAttribute('aria-expanded', 'true'); $('#deleteWord').focus(); break; }
+    case 'delete-account-cancel': { $('#deleteConfirm').hidden = true; $('[data-action="delete-account-start"]').setAttribute('aria-expanded', 'false'); $('#deleteWord').value = ''; $('#deleteMsg').hidden = true; break; }
+    case 'delete-account-confirm': {
+      const msg = $('#deleteMsg'), word = $('#deleteWord');
+      if (word.value.trim().toUpperCase() !== 'DELETE') { msg.textContent = 'Type DELETE to confirm.'; msg.hidden = false; word.focus(); break; }
+      a.disabled = true; a.textContent = 'Deleting…'; msg.hidden = true;
+      try {
+        await api.deleteAccount();
+        try { localStorage.removeItem('rally.provo.v1'); sessionStorage.setItem('rally.accountDeleted', '1'); } catch (e) { /* storage blocked */ }
+        await window.RallyAuth.signOut();
+      } catch (error) { a.disabled = false; a.textContent = 'Delete forever'; msg.textContent = error.message || 'Your account could not be deleted.'; msg.hidden = false; }
+      break;
+    }
     case 'reset-passes': try { await api.resetPasses(); render(); } catch (error) { toast(error.message || 'Passed players could not be restored.'); } break;
 
     case 'open-conv': openConv(id); break;

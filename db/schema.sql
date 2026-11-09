@@ -297,15 +297,36 @@ create policy "write own choices" on choice for all to authenticated
   using (swiper = public.current_profile_id())
   with check (swiper = public.current_profile_id());
 
--- Calendar: anyone may read the schedule; only a signed-in player may change it.
--- Writes are not yet scoped to the owner -- see the note above and Issue #21.
-create policy "read event"   on event for select to anon, authenticated using (true);
-create policy "book event"   on event for insert to authenticated with check (true);
-create policy "cancel event" on event for delete to authenticated using (true);
+-- Calendar: anyone may read the schedule; any signed-in player may change it.
+--
+-- Migration 010 scoped these writes to the game's host, and migration 011 undid
+-- that. The policy was correct but premature: app.js books every game as the
+-- literal placeholder `ME = 'me'` (app.js:534, 560) and all 50 seeded games are
+-- hosted by 'me', so requiring host_id = current_profile_id() refused every
+-- booking and silently cancelled nothing. Issue #21 had placed ownership scoping
+-- out of scope for exactly this reason.
+--
+-- Re-apply ownership scoping together with the front-end fix (PR #42), not before.
+-- Until then a signed-in player can cancel any game, which is a known gap, and
+-- reads are open on purpose pending the product decision in #21 and #41.
+create policy "read event" on event for select to anon, authenticated using (true);
 
-create policy "read attendees"   on event_attendee for select to anon, authenticated using (true);
-create policy "add attendees"    on event_attendee for insert to authenticated with check (true);
-create policy "remove attendees" on event_attendee for delete to authenticated using (true);
+create policy "book event" on event for insert to authenticated
+  with check (true);
+
+create policy "cancel event" on event for delete to authenticated
+  using (true);
+
+-- No UPDATE policy, so a booked game cannot be edited in place. Nothing in the app
+-- updates one; reschedule would need its own card and its own policy.
+
+create policy "read attendees" on event_attendee for select to anon, authenticated using (true);
+
+create policy "add attendees" on event_attendee for insert to authenticated
+  with check (true);
+
+create policy "remove attendees" on event_attendee for delete to authenticated
+  using (true);
 
 -- Second layer, so the block does not rest on policy evaluation alone.
 revoke insert, update, delete on event          from anon;
