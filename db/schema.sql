@@ -297,44 +297,36 @@ create policy "write own choices" on choice for all to authenticated
   using (swiper = public.current_profile_id())
   with check (swiper = public.current_profile_id());
 
--- Calendar: anyone may read the schedule; only the host may change their own game
--- (migration 010).
+-- Calendar: anyone may read the schedule; any signed-in player may change it.
 --
--- Reads are still open on purpose. Whether the calendar should be public is a
--- product decision that has not been made (Issues #21 and #41), so this file does
--- not pre-empt it. Writes are owner-scoped, which is what closed the real hole:
--- before 010 any signed-in player could delete any other player's game, including
--- one they could not see on their own calendar.
+-- Migration 010 scoped these writes to the game's host, and migration 011 undid
+-- that. The policy was correct but premature: app.js books every game as the
+-- literal placeholder `ME = 'me'` (app.js:534, 560) and all 50 seeded games are
+-- hosted by 'me', so requiring host_id = current_profile_id() refused every
+-- booking and silently cancelled nothing. Issue #21 had placed ownership scoping
+-- out of scope for exactly this reason.
+--
+-- Re-apply ownership scoping together with the front-end fix (PR #42), not before.
+-- Until then a signed-in player can cancel any game, which is a known gap, and
+-- reads are open on purpose pending the product decision in #21 and #41.
 create policy "read event" on event for select to anon, authenticated using (true);
 
-create policy "book own event" on event for insert to authenticated
-  with check (host_id = public.current_profile_id());
+create policy "book event" on event for insert to authenticated
+  with check (true);
 
-create policy "cancel own event" on event for delete to authenticated
-  using (host_id = public.current_profile_id());
+create policy "cancel event" on event for delete to authenticated
+  using (true);
 
 -- No UPDATE policy, so a booked game cannot be edited in place. Nothing in the app
 -- updates one; reschedule would need its own card and its own policy.
 
 create policy "read attendees" on event_attendee for select to anon, authenticated using (true);
 
--- Roster changes are host-only, which is exactly what the app does: api.addGame
--- inserts the host plus the invited players, always as the host. Joining a game
--- yourself, or leaving one you were invited to, are not features yet; each would
--- need its own policy.
-create policy "add attendee to own game" on event_attendee for insert to authenticated
-  with check (exists (
-    select 1 from event e
-     where e.event_id = event_attendee.event_id
-       and e.host_id  = public.current_profile_id()
-  ));
+create policy "add attendees" on event_attendee for insert to authenticated
+  with check (true);
 
-create policy "remove attendee from own game" on event_attendee for delete to authenticated
-  using (exists (
-    select 1 from event e
-     where e.event_id = event_attendee.event_id
-       and e.host_id  = public.current_profile_id()
-  ));
+create policy "remove attendees" on event_attendee for delete to authenticated
+  using (true);
 
 -- Second layer, so the block does not rest on policy evaluation alone.
 revoke insert, update, delete on event          from anon;
