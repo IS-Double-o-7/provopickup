@@ -535,6 +535,12 @@ const api = {
     store.save(); return c;
   },
 
+  // OKR dashboard: one database function returns counts only (migration 012).
+  // Resolves to { error } instead of throwing, so the page can say what is missing.
+  async okrDashboard() {
+    const { data, error } = await db.rpc('okr_dashboard');
+    return error ? { error } : { data };
+  },
   async places(sportId = 'all') { return PLACES.filter(p => sportId === 'all' || p.sports.includes(sportId)).sort((a, b) => a.mi - b.mi); },
 
   async syncGames() {
@@ -704,9 +710,9 @@ const brandSVG = `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy
    ===================================================================== */
 const ROUTES = [
   ['home', 'Home', ICON.home], ['play', 'Play', ICON.play], ['messages', 'Messages', ICON.messages], ['courts', 'Courts', ICON.courts],
-  ['calendar', 'Calendar', ICON.calendar], ['reels', 'Reels', ICON.reels], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats],
+  ['calendar', 'Calendar', ICON.calendar], ['reels', 'Reels', ICON.reels], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats], ['goals', 'Goals', ICON.challenge],
 ];
-const MORE = ['courts', 'reels', 'challenge', 'stats'];
+const MORE = ['courts', 'reels', 'challenge', 'stats', 'goals'];
 const ui = { route: 'home', conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, focus: null, swiping: false, typing: {}, resetArmed: false };
 const view = r => $('#v-' + r);
 const isWide = () => window.matchMedia('(min-width: 821px)').matches;
@@ -1141,6 +1147,47 @@ V.stats = async () => {
     </article>`;
 };
 
+/* ---- Goals (OKR dashboard) ---- */
+// The four Key Results the team set at Sprint 1 planning, computed live from the database.
+// `value` is null when there is nothing to divide by yet, so the tile says so.
+function okrCards(d) {
+  const n = d.players, pct = (a, b) => (b ? Math.round(a / b * 100) : null), per = (a, b) => (b ? Math.round(a / b * 100) / 100 : null);
+  return [
+    { id: 'profile', title: 'Complete profiles', target: '100% of players', unit: '%', value: pct(d.profiles.complete, n), goal: 100,
+      formula: `${d.profiles.complete} of ${plural(n, 'player')} have a name, age and photo`, source: 'profile, profile_private, photo' },
+    { id: 'games', title: 'Games played', target: '1 per player per week', unit: '', value: per(d.games.played_7d, n), goal: 1,
+      formula: `${plural(d.games.played_7d, 'game')} played in the last 7 days by ${plural(n, 'player')}`, source: 'event, event_attendee' },
+    { id: 'matches', title: 'New matches', target: '2 per player per week', unit: '', value: per(d.matches.made_7d * 2, n), goal: 2,
+      formula: `${plural(d.matches.made_7d, 'match', 'matches')} made in the last 7 days (each counts for both players)`, source: 'choice' },
+    { id: 'messaged', title: 'Matches that talk', target: '100% of matches', unit: '%', value: pct(d.messaged.pairs_with_message, d.matches.pairs_total), goal: 100,
+      formula: `${d.messaged.pairs_with_message} of ${plural(d.matches.pairs_total, 'matched pair')} have a message`, source: 'choice, messages' },
+  ];
+}
+V.goals = async () => {
+  const { data: d, error } = await api.okrDashboard();
+  const head = `<header class="page-head"><div><p class="eyebrow">Team goals</p><h1>Goals</h1>
+    <p class="sub">Live numbers for our four Key Results. They are counts from the database, not saved figures.</p></div>
+    <button class="btn ghost" data-action="goals-refresh">Refresh</button></header>`;
+  if (error || !d) {
+    console.error(error);
+    view('goals').innerHTML = head + `<div class="card empty"><h3>Numbers are not available yet</h3><p class="muted">The database function for this page has not been applied, or you are offline. Nothing else is affected.</p></div>`;
+    return;
+  }
+  const when = new Date(d.generated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  view('goals').innerHTML = head + `
+    <div class="tiles goals-tiles">${okrCards(d).map(c => {
+      const shown = c.value === null ? '–' : c.value + c.unit, fill = c.value === null ? 0 : Math.min(100, Math.round(c.value / c.goal * 100));
+      return `<article class="card tile" aria-labelledby="goal-${c.id}">
+        <small id="goal-${c.id}">${esc(c.title)}</small><b class="tnum">${shown}</b><small>Target: ${esc(c.target)}</small>
+        <div class="meter goal-meter" role="img" aria-label="${fill}% of target"><i style="width:${fill}%"></i></div>
+        <small class="goal-note">${esc(c.value === null ? 'Nothing to measure yet.' : c.formula)}</small>
+        <small class="goal-note muted">Source: ${esc(c.source)}</small></article>`;
+    }).join('')}</div>
+    <p class="muted small block" role="status">Updated ${when}. Refreshes every 30 seconds while this page is open. Weekly figures use the last 7 days.</p>`;
+  clearTimeout(ui.goalsTimer);
+  ui.goalsTimer = setTimeout(() => { if (ui.route === 'goals') render(); }, 30000);
+};
+
 /* =====================================================================
    7. Modals, sheet, toast
    ===================================================================== */
@@ -1377,6 +1424,7 @@ document.addEventListener('click', async e => {
       break; }
 
     case 'stats-range': saveUI('statsRange', id); render(); break;
+    case 'goals-refresh': render(); break;
   }
 });
 
