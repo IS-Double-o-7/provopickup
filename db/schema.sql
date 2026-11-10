@@ -134,7 +134,7 @@ create table event (
   venue_id        text not null references venue(venue_id),
   -- Bounded so a typo cannot book a game in 1779. Fixed dates, not current_date:
   -- a non-immutable CHECK invalidates stored rows over time and breaks restore.
-  -- Added NOT VALID in migration 012, so three historical junk rows survive until
+  -- Added NOT VALID in migration 013, so three historical junk rows survive until
   -- they are cleaned up and the constraint is validated.
   event_date      date not null
                   constraint event_date_in_range

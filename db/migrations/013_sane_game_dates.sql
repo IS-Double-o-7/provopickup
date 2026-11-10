@@ -1,4 +1,4 @@
--- 012: Stop games being booked centuries away.
+-- 013: Stop games being booked centuries away.
 --
 -- The game form's date input had no bounds, so anything typed was accepted.
 -- Live rows found before this migration:
