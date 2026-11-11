@@ -47,6 +47,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | L8 | Log out always returns to the login page | Not complete | Tested against a stand-in, including a failed sign-out request (#15); not yet checked live |
 | L9 | Phone numbers and birthdays are visible only to their owner | Complete | Live database: a signed-out client reads 0 rows from `profile_private` and cannot read `auth_uid` (#8, #11) |
 | L10 | A user cannot create or change another user's profile | Complete | Live database: an update against another profile changes 0 rows; a second profile per account is rejected (#7) |
+| L11 | A player can permanently delete their profile and login from **Your profile** (type DELETE to confirm) | Not complete | Works against a stand-in database: profile, photo, sports, availability, swipes and login removed, old password rejected. Needs migration 009 applied, then a live check |
 
 ### Matching (Play page)
 
@@ -67,8 +68,11 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 |---|---|---|---|
 | C1 | Book, view and cancel a game on the Calendar, saved in Postgres | Complete | Calendar vertical slice (#1) |
 | C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Games are still hosted by the demo `me` profile and every account sees the same calendar |
-| X1 | Message a match (chat saved in the database) | Not complete | Messages are sample data in the browser; moved to Sprint 2 |
-| X2 | Courts and Maps pages read venues from the database | Not complete | Still the hardcoded `PLACES` list |
+| C3 | New games can only be scheduled for a future date and time (up to a year ahead) | Complete | #55: picker limits plus a save check in local time; tested yesterday, earlier today and 400 days out (all refused) and tomorrow (saved) |
+| C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Not complete | Front end done; needs migration 015 (adds `event.score` and an update rule limited to played games and those three fields) applied in Supabase |
+| C5 | The Rally Provo logo takes a signed-in player to Home | Complete | Logo in the sidebar and the phone top bar is a link to Home; tested on desktop and mobile |
+| X1 | Message a match (chat saved in the database) | Complete | #39: messages saved in Postgres, only to mutual matches, unread badge clears when read; two-player test passed |
+| X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list |
 | X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules (contrast with tinted backgrounds, labels, names, landmarks, headings, ARIA) finds no issues on Log in, Sign up, Profile setup, Your profile, Play, Messages, Calendar and Courts in light and dark mode after the Courts label fix; Home still has a heading-order note |
 | X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Reels, Challenge and Stats not checked yet |
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
@@ -148,7 +152,7 @@ The source is `docs/erd.svg`.
 | **Reporting** | Safety reports | ReportingID (PK), Reporter (FK), ReportedOn (FK), ReportedAt, Why |
 | **Venue** | A court, park or field | VenueID (PK), VenueName, Setting, CourtCount, Unit, MilesAway, BusyNote, Latitude, Longitude |
 | **Venue-Interest** | Which sports a venue supports | VenueInterestID (PK), VenueID (FK), InterestID (FK) |
-| **Event** | A scheduled or played game | EventID (PK), HostID (FK), InterestID (FK), VenueID (FK), EventDate, EventTime, Note, NewPeopleMet, CreatedAt |
+| **Event** | A scheduled or played game | EventID (PK), HostID (FK), InterestID (FK), VenueID (FK), EventDate, EventTime, Note, NewPeopleMet, Score (015), CreatedAt |
 | **EventAttendee** | Who is playing in a game | EventAttendeeID (PK), EventID (FK), ProfileID (FK), Status |
 
 ### Relationships and cardinality
@@ -203,10 +207,13 @@ row-level security policies allow. Anyone may read the public profile columns
 signed-in player may write only their own profile, sports, availability, photo and
 swipes, and may send a message only as themselves and only to a confirmed mutual
 match. Private contact details, swipes, messages and reports are readable only by
-their owner. The calendar's `event` and `event_attendee` may be read by anyone, but
-only the host may cancel their own game or change who is playing in it (migration
-010). Whether the calendar should stay publicly readable has not been decided
-(Issues #21 and #41), so reads are deliberately still open.
+their owner. The calendar's `event` and `event_attendee` may be read by anyone, and
+**any signed-in player may still book or cancel any game** — a known, open gap.
+Migration 010 scoped those writes to the game's host, but migration 011 reverted it:
+the app books every game as the shared placeholder `me`, so the owner-only rule
+refused every booking on the live site. Ownership scoping returns together with the
+front-end fix (PR #42). Whether the calendar should stay publicly readable has not
+been decided (Issues #21 and #41), so reads are deliberately still open.
 
 The **`service_role` key**, which bypasses all security, is never committed and is not
 in this repository. `.env` is listed in `.gitignore`.
@@ -303,6 +310,8 @@ on their profile.
   column-privacy fix (#11) are applied to the live Supabase project.
   Migration 007 widens availability to mornings, afternoons and evenings on every day
   (21 slots); it must be applied before the profile page that offers them goes live.
+  Migration 009 adds `delete_my_account()`, the server-side function behind **Delete
+  profile**; it must be applied before that button works on the live site.
 - The sample calendar data stays attached to the demo `me` profile.
 
 ---

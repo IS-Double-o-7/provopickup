@@ -35,6 +35,10 @@ const relTime = ts => {
   if (diff < 7 * DAY) return new Date(ts).toLocaleDateString('en-US', { weekday: 'short' });
   return fmtShort(new Date(ts));
 };
+const messageTime = ts => {
+  const date = new Date(ts);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+};
 const hue = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const initials = n => (n || '').replace('@', '').split(/[\s._]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
 const avatar = (name, size = 40) => `<span class="avatar" style="--s:${size}px;--av:hsl(${hue(name || 'You')} 42% 40%)" aria-hidden="true">${esc(initials(name || 'You'))}</span>`;
@@ -289,9 +293,11 @@ const rowToGame = r => ({
   id: r.event_id, sport: r.interest_id, place: r.venue_id,
   date: r.event_date, time: String(r.event_time).slice(0, 5),
   with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== ME),
-  met: r.new_people_met || 0, note: r.note || '',
+  met: r.new_people_met || 0, note: r.note || '', score: r.score || '',
 });
-const lastMsg = c => c.messages[c.messages.length - 1];
+// A game is over once its start time has passed (browser local time). Only then can a result be added.
+const gameOver = g => { const t = todayISO(); if (g.date !== t) return g.date < t; const d = new Date(); return g.time <= `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const lastMsg = c => c.messages[c.messages.length - 1] || { from: 'them', text: 'New match. Say hello!', at: Date.now() };
 const myHandle = () => '@' + ((S().profile.name || 'you').toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '') || 'you');
 
 function compat(p, me) {
@@ -464,6 +470,22 @@ const api = {
     }
     delete S().swipes[id]; store.save();
   },
+  /** Permanently delete the signed-in player's account: photos in Storage, then
+   *  the profile and login through the delete_my_account() RPC (migration 009). */
+  async deleteAccount() {
+    const user = window.RallyAuth && window.RallyAuth.user();
+    if (!user?.id || user.demo) throw authError('Sign in to delete your account.');
+    const bucket = db.storage.from(RALLY_CONFIG.PROFILE_PHOTO_BUCKET || 'profile-photos');
+    const { data: files, error: listError } = await bucket.list(user.id);
+    if (listError) console.error('Could not list profile photos', listError);
+    if (files && files.length) {
+      const { error: removeError } = await bucket.remove(files.map(f => `${user.id}/${f.name}`));
+      if (removeError) console.error('Could not remove profile photos', removeError);
+    }
+    const { error } = await db.rpc('delete_my_account');
+    if (error) throw authError('Your account could not be deleted. Please try again.', error);
+  },
+
   async resetPasses() {
     if (hasLiveAccount()) {
       const { error } = await db.from('choice').delete().eq('swiper', requireProfileId()).eq('no', true);
@@ -498,16 +520,82 @@ const api = {
     return S().matches.map(person);
   },
 
-  async conversations() { return [...S().conversations].sort((a, b) => lastMsg(b).at - lastMsg(a).at); },
-  async conversation(id) { return S().conversations.find(c => c.id === id) || null; },
-  async markRead(id) { const c = await api.conversation(id); if (c && c.unread) { c.unread = 0; store.save(); } },
+  // Live accounts: a conversation is every row in `messages` between you and one other
+  // player, plus every mutual match that has not been messaged yet. There is no conversation
+  // table, so "unread" is the messages sent to you whose read_at is still null.
+  async syncConversations() {
+    if (!hasLiveAccount()) return { error: null };
+    const myId = requireProfileId();
+    const [matchesResult, messagesResult] = await Promise.all([
+      db.rpc('my_matches'),
+      db.from('messages').select('message_id,sender_id,receiver_id,message,sent_at,read_at').order('sent_at', { ascending: true }),
+    ]);
+    if (matchesResult.error) return { error: authError('Could not load your matches.', matchesResult.error) };
+    if (messagesResult.error) return { error: authError('Could not load your messages.', messagesResult.error) };
+    const byOther = new Map();
+    for (const row of messagesResult.data || []) {
+      const mine = row.sender_id === myId, other = mine ? row.receiver_id : row.sender_id;
+      if (!byOther.has(other)) byOther.set(other, []);
+      byOther.get(other).push({
+        from: mine ? 'me' : 'them', text: row.message, at: Date.parse(row.sent_at), unread: !mine && !row.read_at,
+        kind: /^(Added a game|Logged our game):/.test(row.message) ? 'game' : 'text',
+      });
+    }
+    const matchIds = (matchesResult.data || []).map(row => row.profile_id);
+    const ids = [...new Set([...matchIds, ...byOther.keys()])];
+    try { await loadPlayersForIds(ids); }
+    catch (error) { return { error }; }
+    const s = S();
+    s.matches = matchIds;
+    s.conversations = ids.filter(id => person(id)).map(id => {
+      const messages = byOther.get(id) || [];
+      const unread = messages.filter(m => m.unread).length;
+      return { id: 'c-' + id, with: id, unread, messages };
+    });
+    store.save();
+    return { error: null };
+  },
+  async conversations() {
+    if (hasLiveAccount()) {
+      const { error } = await api.syncConversations();
+      if (error) throw error;
+    }
+    return [...S().conversations].sort((a, b) => lastMsg(b).at - lastMsg(a).at);
+  },
+  async conversation(id) {
+    if (hasLiveAccount() && !S().conversations.some(c => c.id === id)) {
+      const { error } = await api.syncConversations();
+      if (error) throw error;
+    }
+    return S().conversations.find(c => c.id === id) || null;
+  },
+  async markRead(id) {
+    const c = await api.conversation(id); if (!c || !c.unread) return;
+    c.unread = 0; c.messages.forEach(m => { m.unread = false; }); store.save();
+    if (hasLiveAccount()) {
+      // Only read_at may be updated (migration 006 grants no other column), and only on messages sent to you.
+      const { error } = await db.from('messages').update({ read_at: new Date().toISOString() })
+        .eq('receiver_id', requireProfileId()).eq('sender_id', c.with).is('read_at', null);
+      if (error) console.error('Could not mark messages read', error);
+    }
+  },
   async send(id, text, kind = 'text') {
     const c = await api.conversation(id); if (!c) return {};
-    c.messages.push({ from: 'me', text, at: Date.now(), kind }); store.save();
+    if (hasLiveAccount()) {
+      const { data, error } = await db.from('messages')
+        .insert({ sender_id: requireProfileId(), receiver_id: c.with, message: text })
+        .select('sent_at').single();
+      if (error) throw authError('Your message could not be sent. Please try again.', error);
+      c.messages.push({ from: 'me', text, at: Date.parse(data.sent_at), kind });
+    } else {
+      c.messages.push({ from: 'me', text, at: Date.now(), kind });
+    }
+    store.save();
     const t = todaysChallenge();
     return { done: t.auto === 'message' ? completeToday() : null };
   },
   async demoReply(id, viewing) {
+    if (hasLiveAccount()) return null; // real players reply for themselves
     const c = await api.conversation(id); if (!c) return null;
     const p = person(c.with), mine = [...c.messages].reverse().find(m => m.from === 'me');
     c.messages.push({ from: 'them', text: replyFor(mine ? mine.text : '', p), at: Date.now() });
@@ -515,11 +603,28 @@ const api = {
     store.save(); return c;
   },
 
+  // Courts: PLACES is replaced in place from the venue table so place() stays synchronous.
+  // If the database cannot be reached the hardcoded list stays.
+  async syncPlaces() {
+    const { data, error } = await db.from('venue')
+      .select('venue_id,venue_name,setting,court_count,unit,miles_away,busy_note,latitude,longitude,venue_interest(interest_id)');
+    if (error || !data || !data.length) { if (error) console.error('Could not load courts', error); return { error: error || null }; }
+    PLACES.splice(0, PLACES.length, ...data.map(v => ({
+      id: v.venue_id, name: v.venue_name,
+      sports: (v.venue_interest || []).map(x => x.interest_id).filter(id => SPORTS.some(s => s.id === id)),
+      setting: v.setting || '', count: v.court_count || 0, unit: v.unit || 'courts',
+      mi: Number(v.miles_away) || 0, busy: v.busy_note || '',
+      lat: v.latitude == null ? null : Number(v.latitude), lng: v.longitude == null ? null : Number(v.longitude),
+    })));
+    return { error: null };
+  },
   async places(sportId = 'all') { return PLACES.filter(p => sportId === 'all' || p.sports.includes(sportId)).sort((a, b) => a.mi - b.mi); },
 
   async syncGames() {
-    const { data, error } = await db.from('event')
-      .select('event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)');
+    const cols = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)';
+    let { data, error } = await db.from('event').select(cols + ', score');
+    // Before migration 015 is applied there is no score column; load games without it.
+    if (error && (error.code === '42703' || /score/.test(error.message || ''))) ({ data, error } = await db.from('event').select(cols));
     if (error) { console.error('Could not load games', error); return { error }; }
     S().games = data.map(rowToGame); store.save(); return { error: null };
   },
@@ -545,6 +650,17 @@ const api = {
     S().games.push(g); store.save();
     const t = todaysChallenge();
     return { game: g, done: t.auto === 'game' && g.date >= todayISO() ? completeToday() : null, error: null };
+  },
+
+  async saveResult(id, r) {
+    const g = S().games.find(x => String(x.id) === String(id)); if (!g) return { error: { message: 'Game not found' } };
+    const { data, error } = await db.from('event')
+      .update({ score: r.score || null, new_people_met: r.met, note: r.note || null })
+      .eq('event_id', g.id).select('event_id');
+    if (error) { console.error('Could not save the result', error); return { error }; }
+    // The database refuses updates to games that have not happened (0 rows, no error).
+    if (Array.isArray(data) && !data.length) return { error: { message: 'Game is not over yet' } };
+    Object.assign(g, { score: r.score, met: r.met, note: r.note }); store.save(); return { error: null };
   },
 
   async removeGame(id) {
@@ -872,8 +988,8 @@ V.messages = async () => {
     <header class="page-head"><div><p class="eyebrow">${plural(convs.length, 'match', 'matches')}</p><h1>Messages</h1></div>
       <button class="btn ghost" data-route="play">Find more players</button></header>
     <div class="msg-layout ${ui.chatOpen ? 'chat-open' : ''}" id="msgLayout">
-      <aside class="conv-list" id="convList" aria-label="Conversations"></aside>
-      <section class="chat" id="chat" aria-label="Conversation"></section>
+      <aside class="conv-list" id="convList" aria-label="Your conversations"></aside>
+      <section class="chat" id="chat" aria-label="Selected conversation" aria-live="polite"></section>
     </div>`;
   await renderConvList(convs);
   await renderChat();
@@ -881,50 +997,71 @@ V.messages = async () => {
 async function renderConvList(convs) {
   convs = convs || await api.conversations();
   $('#convList').innerHTML = convs.length ? convs.map(c => {
-    const p = person(c.with), m = lastMsg(c);
-    return `<button class="conv ${c.id === ui.conv ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-action="open-conv" data-id="${c.id}">${avatar(p.name, 44)}<span class="min0"><strong>${esc(p.name)}</strong><span class="last">${m.from === 'me' ? 'You: ' : ''}${esc(m.text)}</span></span><span><time>${relTime(m.at)}</time>${c.unread ? '<i class="dot"></i>' : ''}</span></button>`;
-  }).join('') : `<div class="empty"><h3>No matches yet</h3><p class="muted">Like a few players in Play. When it’s mutual, the chat shows up here.</p></div>`;
+    const p = person(c.with), m = lastMsg(c), selected = c.id === ui.conv;
+    const preview = m ? `${m.from === 'me' ? 'You: ' : ''}${m.text}` : 'Start a conversation';
+    const unreadLabel = c.unread ? `, ${c.unread} unread ${c.unread === 1 ? 'message' : 'messages'}` : '';
+    const stamp = m ? relTime(m.at) : '';
+    const isoStamp = m && !Number.isNaN(new Date(m.at).getTime()) ? new Date(m.at).toISOString() : '';
+    return `<button type="button" class="conv ${selected ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-action="open-conv" data-id="${esc(c.id)}" aria-pressed="${selected}" aria-label="Open conversation with ${esc(p?.name || 'player')}${unreadLabel}">${avatar(p?.name || 'Player', 44)}<span class="min0"><strong>${esc(p?.name || 'Player')}</strong><span class="last">${esc(preview)}</span></span><span class="conv-meta">${isoStamp ? `<time datetime="${isoStamp}">${stamp}</time>` : ''}${c.unread ? '<i class="dot" aria-hidden="true"></i>' : ''}</span></button>`;
+  }).join('') : `<div class="empty conv-empty"><span class="empty-icon">${ICON.messages}</span><h2>No matches yet</h2><p class="muted">Like a few players in Play. When it’s mutual, your conversations will show up here.</p><button class="btn sm" data-route="play">Find players</button></div>`;
 }
 async function renderChat() {
   const box = $('#chat'); if (!box) return;
   const c = ui.conv ? await api.conversation(ui.conv) : null;
-  if (!c) { box.innerHTML = `<div class="empty"><h3>Pick a conversation</h3></div>`; return; }
+  if (!c) { box.innerHTML = `<div class="empty chat-empty"><span class="empty-icon">${ICON.messages}</span><h3>Select a conversation</h3><p class="muted">Choose a match from your inbox to see messages and plan a game together.</p></div>`; return; }
   if (isWide() || ui.chatOpen) { await api.markRead(c.id); updateBadges(); }
   const p = person(c.with), me = S().profile, draft = $('#chatInput') ? $('#chatInput').value : '';
   let lastDay = '';
-  const bubbles = c.messages.map(m => {
+  const messages = Array.isArray(c.messages) ? c.messages : [];
+  const bubbles = messages.map(m => {
     const k = iso(new Date(m.at)); let sep = '';
     if (k !== lastDay) { lastDay = k; sep = `<div class="day-sep">${relDay(k) === 'Today' || relDay(k) === 'Yesterday' ? relDay(k) : fmtDay(k)}</div>`; }
-    return sep + `<div class="bubble ${m.kind === 'game' ? 'game' : m.from}">${esc(m.text)}</div>`;
+    const date = new Date(m.at), isoStamp = Number.isNaN(date.getTime()) ? '' : date.toISOString();
+    const label = m.from === 'me' ? 'You' : (p?.name || 'Match');
+    return sep + `<article class="bubble ${m.kind === 'game' ? 'game' : m.from}"><span>${esc(m.text)}</span>${isoStamp ? `<time datetime="${isoStamp}" aria-label="${label}, ${date.toLocaleString('en-US')}">${messageTime(m.at)}</time>` : ''}</article>`;
   }).join('');
-  const shared = p.sports.find(([s]) => me.sports[s]);
-  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, place(p.court) ? `Meet at ${place(p.court).name}?` : null].filter(Boolean);
+  const shared = p?.sports?.find(([s]) => me.sports[s]);
+  const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, place(p?.court) ? `Meet at ${place(p.court).name}?` : null].filter(Boolean);
+  const sports = p?.sports?.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ') || 'Rally Provo match';
   box.innerHTML = `
     <div class="chat-head">
       <button class="icon-btn back-btn" data-action="conv-back" aria-label="Back to conversations">${ICON.back}</button>
-      ${avatar(p.name, 40)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ')}</small></div>
-      <button class="btn ghost sm" data-action="add-game" data-with="${p.id}" data-sport="${shared ? shared[0] : p.sports[0][0]}">${ICON.calendar} Plan a game</button>
+      ${avatar(p?.name || 'Player', 40)}<div class="grow"><strong>${esc(p?.name || 'Your match')}</strong><small class="muted">${esc(sports)}</small></div>
+      <button class="btn ghost sm" data-action="add-game" data-with="${esc(p?.id || '')}" data-sport="${shared ? shared[0] : p?.sports?.[0]?.[0] || ''}">${ICON.calendar} Plan a game</button>
     </div>
-    <div class="chat-body" id="chatBody">${bubbles}${ui.typing[c.id] ? '<div class="typing" aria-label="Typing"><i></i><i></i><i></i></div>' : ''}</div>
-    <div class="suggest">${sugg.map(t => `<button class="chip" data-action="suggest" data-text="${esc(t)}">${esc(t)}</button>`).join('')}<button class="chip" data-action="add-game" data-with="${p.id}">${ICON.calendar.replace('<svg', '<svg width="15" height="15"')} Plan a game</button></div>
-    <form class="chat-form" id="chatForm" data-conv="${c.id}"><input id="chatInput" autocomplete="off" maxlength="500" placeholder="Message ${esc(p.name.split(' ')[0])}…" aria-label="Message ${esc(p.name)}"><button class="btn" aria-label="Send">${ICON.send}</button></form>`;
+    <div class="chat-body" id="chatBody" role="log" aria-label="Messages with ${esc(p?.name || 'your match')}" aria-live="polite" aria-relevant="additions text">${bubbles || `<p class="muted chat-start">Say hello to ${esc(p?.name?.split(' ')[0] || 'your match')} and start planning your next game.</p>`}${ui.typing[c.id] ? '<div class="typing" role="status" aria-label="Your match is typing"><i></i><i></i><i></i></div>' : ''}</div>
+    <div class="suggest" aria-label="Suggested messages">${sugg.map(t => `<button type="button" class="chip" data-action="suggest" data-text="${esc(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip" data-action="add-game" data-with="${esc(p?.id || '')}">${ICON.calendar.replace('<svg', '<svg width="15" height="15"')} Plan a game</button></div>
+    <form class="chat-form" id="chatForm" data-conv="${esc(c.id)}"><label class="sr-only" for="chatInput">Message ${esc(p?.name || 'your match')}</label><input id="chatInput" autocomplete="off" maxlength="500" placeholder="Message ${esc(p?.name?.split(' ')[0] || 'your match')}…" aria-label="Message ${esc(p?.name || 'your match')}"><button class="btn" id="chatSend" aria-label="Send message to ${esc(p?.name || 'your match')}">${ICON.send}</button><span id="chatStatus" class="sr-only" role="status" aria-live="polite"></span></form>`;
   $('#chatInput').value = draft;
   const body = $('#chatBody'); body.scrollTop = body.scrollHeight;
   renderConvList();
 }
 async function sendMessage(convId, text) {
-  const res = await api.send(convId, text);
-  ui.typing[convId] = true;
-  await renderChat(); $('#chatInput') && $('#chatInput').focus();
-  if (res.done) challengeToast(res.done);
-  setTimeout(async () => {
-    const viewing = ui.route === 'messages' && ui.conv === convId && (isWide() || ui.chatOpen);
-    await api.demoReply(convId, viewing);
-    ui.typing[convId] = false;
-    if (ui.route === 'messages') await renderChat();
-    updateBadges();
-    if (!viewing) { const p = person((await api.conversation(convId)).with); toast(`${p.name.split(' ')[0]} replied`, { label: 'Open', run: () => openConv(convId) }); }
-  }, 1300 + Math.random() * 900);
+  const status = $('#chatStatus'), send = $('#chatSend');
+  if (status) status.textContent = 'Sending message…';
+  if (send) send.disabled = true;
+  try {
+    const res = await api.send(convId, text);
+    ui.typing[convId] = true;
+    await renderChat(); $('#chatInput') && $('#chatInput').focus();
+    const nextStatus = $('#chatStatus'); if (nextStatus) nextStatus.textContent = 'Message sent.';
+    if (res.done) challengeToast(res.done);
+    setTimeout(async () => {
+      const viewing = ui.route === 'messages' && ui.conv === convId && (isWide() || ui.chatOpen);
+      try { await api.demoReply(convId, viewing); } catch (error) { console.error('Could not refresh the demo reply', error); }
+      ui.typing[convId] = false;
+      if (ui.route === 'messages') await renderChat();
+      updateBadges();
+      if (!viewing) { const c = await api.conversation(convId), p = c && person(c.with); if (p) toast(`${p.name.split(' ')[0]} replied`, { label: 'Open', run: () => openConv(convId) }); }
+    }, 1300 + Math.random() * 900);
+  } catch (error) {
+    console.error('Could not send message', error);
+    const input = $('#chatInput'), retryStatus = $('#chatStatus'), retryButton = $('#chatSend');
+    if (input) { input.value = text; input.focus(); }
+    if (retryStatus) retryStatus.textContent = 'Message could not be sent. Your draft is still here; please try again.';
+    toast('Message could not be sent. Your draft is still here.');  // #chatStatus is screen-reader only; this is the visible notice
+    if (retryButton) retryButton.disabled = false;
+  }
 }
 function openConv(id) { ui.conv = id; ui.chatOpen = true; closeModal(); if (ui.route === 'messages') V.messages(); else go('messages'); }
 
@@ -972,7 +1109,7 @@ V.calendar = async () => {
   }).join('');
   view('calendar').innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Your schedule</p><h1>Calendar</h1>
-      <p class="sub">Plan games ahead, or log ones you already played so your stats stay honest.</p></div>
+      <p class="sub">Plan upcoming games and look back at the ones you played.</p></div>
       <button class="btn" data-action="add-game" data-date="${sel}">${ICON.plus} Add a game</button></header>
     <div class="cal-layout">
       <div class="card">
@@ -981,7 +1118,7 @@ V.calendar = async () => {
         <div class="cal-grid">${['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => `<span class="cal-dow">${d}</span>`).join('')}${cells}</div>
       </div>
       <div class="stack">
-        <div class="card"><div class="between"><div><p class="eyebrow" style="margin-bottom:4px">${relDay(sel)}</p><h3>${fmtLong(parseISO(sel))}</h3></div><button class="icon-btn" data-action="add-game" data-date="${sel}" aria-label="Add a game on this day">${ICON.plus}</button></div>
+        <div class="card"><div class="between"><div><p class="eyebrow" style="margin-bottom:4px">${relDay(sel)}</p><h3>${fmtLong(parseISO(sel))}</h3></div>${sel < tk ? '' : `<button class="icon-btn" data-action="add-game" data-date="${sel}" aria-label="Add a game on this day">${ICON.plus}</button>`}</div>
           <div style="margin-top:8px">${selGames.length ? selGames.map(gameRow).join('') : `<p class="muted small" style="margin-top:8px">${sel < tk ? 'No games logged this day.' : 'Nothing planned. Add a game to fill it in.'}</p>`}</div></div>
         <div class="card"><h3>Coming up</h3><div style="margin-top:4px">${upcoming.length ? upcoming.map(gameRow).join('') : '<p class="muted small" style="margin-top:8px">No upcoming games.</p>'}</div></div>
       </div>
@@ -991,7 +1128,7 @@ function gameRow(g) {
   const names = g.with.map(id => person(id)).filter(Boolean).map(p => p.name);
   const past = g.date < todayISO();
   return `<div class="game"><div><b>${fmtTime(g.time)}</b><small class="muted">${past ? 'Played' : relDay(g.date)}</small></div>
-    <div class="min0"><strong>${sport(g.sport).icon} ${esc(sport(g.sport).name)} at ${esc(place(g.place).name)}</strong><small class="muted">${fmtDay(g.date)} · ${names.length ? 'With ' + esc(names.join(', ')) : 'Open game'}${g.note ? ' · ' + esc(g.note) : ''}</small></div>
+    <div class="min0"><strong>${sport(g.sport).icon} ${esc(sport(g.sport).name)} at ${esc(place(g.place).name)}</strong><small class="muted">${fmtDay(g.date)} · ${names.length ? 'With ' + esc(names.join(', ')) : 'Open game'}${g.note ? ' · ' + esc(g.note) : ''}</small>${g.score || (past && g.met) ? `<small class="game-result">${g.score ? 'Score ' + esc(g.score) : ''}${g.score && g.met ? ' · ' : ''}${g.met ? 'Met ' + plural(g.met, 'new player') : ''}</small>` : ''}${gameOver(g) ? `<button class="btn ghost sm game-result-btn" data-action="game-result" data-id="${g.id}">${g.score || g.met ? 'Edit result' : 'Add result'}</button>` : ''}</div>
     <button class="icon-btn sm" data-action="del-game" data-id="${g.id}" aria-label="Remove this game">${ICON.x}</button></div>`;
 }
 
@@ -1126,21 +1263,33 @@ function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
   const me = S().profile, p0 = withId ? person(withId) : null;
   if (!sp) sp = pl ? place(pl).sports[0] : p0 ? ((p0.sports.find(([s]) => me.sports[s]) || p0.sports[0])[0]) : Object.keys(me.sports)[0] || 'pickleball';
   if (!pl || !place(pl).sports.includes(sp)) { const o = PLACES.filter(x => x.sports.includes(sp)); pl = p0 && o.some(x => x.id === p0.court) ? p0.court : (o[0] || PLACES[0]).id; }
-  date = date || iso(addDays(today0(), 1));
+  // Games can only be planned for today or later; a past day opens the form on tomorrow.
+  if (!date || date < todayISO()) date = iso(addDays(today0(), 1));
   const order = [...Object.keys(me.sports), ...SPORTS.map(s => s.id).filter(id => !me.sports[id])];
-  openModal(`${modalHead('Calendar', 'Plan a game', 'Pick a past date to log a game you already played.')}
+  openModal(`${modalHead('Calendar', 'Plan a game', 'Pick a day and time that haven’t happened yet.')}
     <form class="form" id="gameForm">
       <div class="form-grid">
         <div class="field"><label for="g-sport">Sport</label><select id="g-sport">${order.map(id => `<option value="${id}" ${id === sp ? 'selected' : ''}>${sport(id).icon} ${sport(id).name}</option>`).join('')}</select></div>
         <div class="field"><label for="g-place">Where</label><select id="g-place">${placeOptions(sp, pl)}</select></div>
-        <div class="field"><label for="g-date">Date</label><input type="date" id="g-date" value="${date}" min="${iso(addDays(today0(), -30))}" max="${iso(addDays(today0(), 365))}" required></div>
+        <div class="field"><label for="g-date">Date</label><input type="date" id="g-date" value="${date}" min="${todayISO()}" max="${iso(addDays(today0(), 365))}" required></div>
         <div class="field"><label for="g-time">Time</label><input type="time" id="g-time" value="18:00" required></div>
         <div class="field"><label for="g-with">Playing with</label><select id="g-with"><option value="">Open game</option>${S().matches.map(id => `<option value="${id}" ${id === withId ? 'selected' : ''}>${esc(person(id).name)}</option>`).join('')}</select></div>
-        <div class="field"><label for="g-met">New people met</label><input type="number" id="g-met" min="0" max="30" value="0" inputmode="numeric"></div>
       </div>
-      <div class="field"><label for="g-note">Note</label><input id="g-note" maxlength="80" placeholder="Court number, what to bring, score…"></div>
+      <div class="field"><label for="g-note">Note</label><input id="g-note" maxlength="80" placeholder="Court number, what to bring…"></div>
       <label class="check"><input type="checkbox" id="g-notify" checked> Send the details to the person you’re playing with</label>
       <div class="row"><button class="btn" type="submit">Save game</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
+    </form>`);
+}
+function openResultModal(id) {
+  const g = S().games.find(x => String(x.id) === String(id)); if (!g) return;
+  openModal(`${modalHead('Calendar', g.score || g.met ? 'Edit result' : 'Add result', `${sport(g.sport).icon} ${sport(g.sport).name} at ${place(g.place).name}, ${fmtDay(g.date)} at ${fmtTime(g.time)}`)}
+    <form class="form" id="resultForm" data-id="${esc(g.id)}">
+      <div class="form-grid">
+        <div class="field"><label for="r-score">Score <span class="muted" style="font-weight:500">(optional)</span></label><input id="r-score" maxlength="40" value="${esc(g.score || '')}" placeholder="e.g. 11-7, 9-11" autocomplete="off"></div>
+        <div class="field"><label for="r-met">New people met</label><input type="number" id="r-met" min="0" max="30" value="${g.met || 0}" inputmode="numeric"></div>
+      </div>
+      <div class="field"><label for="r-note">How did it go? <span class="muted" style="font-weight:500">(optional)</span></label><input id="r-note" maxlength="80" value="${esc(g.note || '')}" placeholder="Close games, rematch next week…"></div>
+      <div class="row"><button class="btn" type="submit">Save result</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
     </form>`);
 }
 /* ---- Profile fields (shared by sign-up setup and the profile modal) ---- */
@@ -1232,7 +1381,18 @@ async function openProfile() {
       ${availFields('p', p.avail)}
       <p class="auth-msg" id="p-msg" role="alert" data-kind="error" hidden></p>
       <div class="row"><button class="btn" type="submit">Save profile</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
-      ${window.RallyAuth && window.RallyAuth.user() ? `<div class="auth-account"><p class="muted small">Signed in as <b>${esc(window.RallyAuth.user().email)}</b></p><button class="btn ghost sm" type="button" data-auth="sign-out">Log out</button></div>` : ''}
+      ${window.RallyAuth && window.RallyAuth.user() ? `<div class="auth-account"><p class="muted small">Signed in as <b>${esc(window.RallyAuth.user().email)}</b></p><button class="btn ghost sm" type="button" data-auth="sign-out">Log out</button></div>
+      <div class="danger-zone" id="dangerZone">
+        <div class="between"><div><p class="danger-title">Delete profile</p><p class="muted small">Permanently removes your profile, photo, sports, swipes, matches, messages and login.</p></div>
+        <button class="btn danger sm" type="button" data-action="delete-account-start" aria-expanded="false" aria-controls="deleteConfirm">Delete profile</button></div>
+        <div class="delete-confirm" id="deleteConfirm" hidden>
+          <label for="deleteWord">This can’t be undone. Type <b>DELETE</b> to confirm.</label>
+          <div class="row"><input id="deleteWord" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="deleteMsg">
+          <button class="btn danger-solid sm" type="button" data-action="delete-account-confirm">Delete forever</button>
+          <button class="btn ghost sm" type="button" data-action="delete-account-cancel">Cancel</button></div>
+          <p class="auth-msg" id="deleteMsg" role="alert" data-kind="error" hidden></p>
+        </div>
+      </div>` : ''}
     </form>`);
 }
 function openComposer() {
@@ -1276,6 +1436,19 @@ document.addEventListener('click', async e => {
     case 'play-person': saveUI('playSport', 'all'); ui.focus = id; closeModal(); go('play'); break;
     case 'retry-play': render(); break;
     case 'swipe': doSwipe(a.dataset.dir); break;
+    case 'delete-account-start': { const c = $('#deleteConfirm'); c.hidden = false; a.setAttribute('aria-expanded', 'true'); $('#deleteWord').focus(); break; }
+    case 'delete-account-cancel': { $('#deleteConfirm').hidden = true; $('[data-action="delete-account-start"]').setAttribute('aria-expanded', 'false'); $('#deleteWord').value = ''; $('#deleteMsg').hidden = true; break; }
+    case 'delete-account-confirm': {
+      const msg = $('#deleteMsg'), word = $('#deleteWord');
+      if (word.value.trim().toUpperCase() !== 'DELETE') { msg.textContent = 'Type DELETE to confirm.'; msg.hidden = false; word.focus(); break; }
+      a.disabled = true; a.textContent = 'Deleting…'; msg.hidden = true;
+      try {
+        await api.deleteAccount();
+        try { localStorage.removeItem('rally.provo.v1'); sessionStorage.setItem('rally.accountDeleted', '1'); } catch (e) { /* storage blocked */ }
+        await window.RallyAuth.signOut();
+      } catch (error) { a.disabled = false; a.textContent = 'Delete forever'; msg.textContent = error.message || 'Your account could not be deleted.'; msg.hidden = false; }
+      break;
+    }
     case 'reset-passes': try { await api.resetPasses(); render(); } catch (error) { toast(error.message || 'Passed players could not be restored.'); } break;
 
     case 'open-conv': openConv(id); break;
@@ -1283,6 +1456,7 @@ document.addEventListener('click', async e => {
     case 'conv-back': ui.chatOpen = false; V.messages(); break;
     case 'suggest': { const i = $('#chatInput'); if (i) { i.value = a.dataset.text; i.focus(); } break; }
 
+    case 'game-result': openResultModal(a.dataset.id); break;
     case 'add-game': openGameModal({ withId: a.dataset.with, place: a.dataset.place, date: a.dataset.date, sport: a.dataset.sport }); break;
     case 'del-game': { const g = await api.removeGame(id); render(); if (g) toast('Game removed', { label: 'Undo', run: async () => { await api.restoreGame(g); render(); } }); break; }
     case 'cal-prev': case 'cal-next': ui.calMonth = new Date(ui.calMonth.getFullYear(), ui.calMonth.getMonth() + (a.dataset.action === 'cal-next' ? 1 : -1), 1); render(); break;
@@ -1321,24 +1495,48 @@ document.addEventListener('submit', async e => {
   const f = e.target;
   if (f.id === 'chatForm') {
     const i = $('#chatInput'), text = i.value.trim(); if (!text) return;
-    i.value = ''; sendMessage(f.dataset.conv, text);
+    i.value = ''; await sendMessage(f.dataset.conv, text);
+  }
+  if (f.id === 'resultForm') {
+    const r = { score: $('#r-score').value.trim().slice(0, 40), met: Math.min(30, Math.max(0, Math.round(Number($('#r-met').value) || 0))), note: $('#r-note').value.trim() };
+    const res = await api.saveResult(f.dataset.id, r);
+    if (res.error) return toast(/score|column|permission|42501|42703/i.test(`${res.error.code} ${res.error.message}`) ? 'Saving results isn’t switched on yet. Ask the team to apply migration 015.' : 'Could not save the result. Check your connection and try again.');
+    closeModal(); render(); return toast('Result saved. Your stats are updated.');
   }
   if (f.id === 'gameForm') {
-    const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: Math.max(0, Number($('#g-met').value) || 0), note: $('#g-note').value.trim() };
+    const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: 0, note: $('#g-note').value.trim() };
     if (!g.date || !g.time) return toast('Add a date and a time to save the game.');
-    // The date input is bounded, but typed values and the demo path bypass it.
-    if (g.date < iso(addDays(today0(), -30)) || g.date > iso(addDays(today0(), 365))) return toast('Pick a date in the last 30 days or the next year.');
+    // Typed dates can skip the picker's min, so check again here (local time, not UTC).
+    const nowHM = (d => `${pad(d.getHours())}:${pad(d.getMinutes())}`)(new Date());
+    if (g.date < todayISO() || (g.date === todayISO() && g.time <= nowHM)) return toast('Games can only be planned for a future date and time.');
+    if (g.date > iso(addDays(today0(), 365))) return toast('Games can be planned up to a year ahead.');
     const notify = $('#g-notify').checked, res = await api.addGame(g);
     if (res.error) return toast('Could not save the game. Check your connection and try again.');
     closeModal();
     const past = g.date < todayISO();
+    let chatFailed = false;
     if (g.with[0] && notify) {
       const c = S().conversations.find(x => x.with === g.with[0]);
-      if (c) { const r = await api.send(c.id, `${past ? 'Logged our game' : 'Added a game'}: ${sport(g.sport).name} on ${fmtDay(g.date)} at ${fmtTime(g.time)}, ${place(g.place).name}.`, 'game'); if (!past) setTimeout(async () => { await api.demoReply(c.id, ui.route === 'messages' && ui.conv === c.id); if (ui.route === 'messages') renderChat(); updateBadges(); }, 1500); if (r.done && !res.done) res.done = r.done; }
+      // The game is already saved in Postgres by this point. api.send can throw once
+      // PR #39 lands (it rejects a send the database refuses), so a failed chat post
+      // must not abort the rest of this handler and leave the calendar unrendered.
+      if (c) {
+        try {
+          const r = await api.send(c.id, `${past ? 'Logged our game' : 'Added a game'}: ${sport(g.sport).name} on ${fmtDay(g.date)} at ${fmtTime(g.time)}, ${place(g.place).name}.`, 'game');
+          if (!past) setTimeout(async () => { await api.demoReply(c.id, ui.route === 'messages' && ui.conv === c.id); if (ui.route === 'messages') renderChat(); updateBadges(); }, 1500);
+          if (r.done && !res.done) res.done = r.done;
+        } catch (error) {
+          // toast() reuses one element, so warning here would be erased by the
+          // success toast below. Flag it and let the final toast say it instead.
+          console.error('Could not post the game to the chat', error);
+          chatFailed = true;
+        }
+      }
     }
     ui.selDate = g.date; const d = parseISO(g.date); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
     render();
-    if (res.done) challengeToast(res.done);
+    if (chatFailed) toast(past ? 'Game logged, but we could not message your friend.' : 'Game added, but we could not message your friend.');
+    else if (res.done) challengeToast(res.done);
     else toast(past ? 'Game logged. Your stats are updated.' : `Added for ${fmtDay(g.date)} at ${fmtTime(g.time)}`, ui.route !== 'calendar' ? { label: 'View', run: () => go('calendar') } : null);
   }
   if (f.id === 'profileForm' || f.id === 'onboardForm') {
@@ -1405,7 +1603,10 @@ function startApp() {
   if (started) return; started = true;
   buildNav();
   go((location.hash || '').slice(1) || 'home');
-  api.syncGames().then(({ error }) => { render(); if (error) toast('Could not reach the database. Showing what is cached.'); });
+  Promise.all([api.syncGames(), api.syncPlaces(), api.syncConversations()]).then(results => {
+    render();
+    if (results.some(r => r.error)) toast('Could not reach the database. Showing what is cached.');
+  });
 }
 // Nothing renders until auth.js reports a signed-in player, and a new
 // player sets up their profile before seeing the app.
