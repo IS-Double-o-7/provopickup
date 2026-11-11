@@ -1012,7 +1012,7 @@ V.calendar = async () => {
   }).join('');
   view('calendar').innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Your schedule</p><h1>Calendar</h1>
-      <p class="sub">Plan games ahead, or log ones you already played so your stats stay honest.</p></div>
+      <p class="sub">Plan upcoming games and look back at the ones you played.</p></div>
       <button class="btn" data-action="add-game" data-date="${sel}">${ICON.plus} Add a game</button></header>
     <div class="cal-layout">
       <div class="card">
@@ -1021,7 +1021,7 @@ V.calendar = async () => {
         <div class="cal-grid">${['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => `<span class="cal-dow">${d}</span>`).join('')}${cells}</div>
       </div>
       <div class="stack">
-        <div class="card"><div class="between"><div><p class="eyebrow" style="margin-bottom:4px">${relDay(sel)}</p><h3>${fmtLong(parseISO(sel))}</h3></div><button class="icon-btn" data-action="add-game" data-date="${sel}" aria-label="Add a game on this day">${ICON.plus}</button></div>
+        <div class="card"><div class="between"><div><p class="eyebrow" style="margin-bottom:4px">${relDay(sel)}</p><h3>${fmtLong(parseISO(sel))}</h3></div>${sel < tk ? '' : `<button class="icon-btn" data-action="add-game" data-date="${sel}" aria-label="Add a game on this day">${ICON.plus}</button>`}</div>
           <div style="margin-top:8px">${selGames.length ? selGames.map(gameRow).join('') : `<p class="muted small" style="margin-top:8px">${sel < tk ? 'No games logged this day.' : 'Nothing planned. Add a game to fill it in.'}</p>`}</div></div>
         <div class="card"><h3>Coming up</h3><div style="margin-top:4px">${upcoming.length ? upcoming.map(gameRow).join('') : '<p class="muted small" style="margin-top:8px">No upcoming games.</p>'}</div></div>
       </div>
@@ -1166,14 +1166,15 @@ function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
   const me = S().profile, p0 = withId ? person(withId) : null;
   if (!sp) sp = pl ? place(pl).sports[0] : p0 ? ((p0.sports.find(([s]) => me.sports[s]) || p0.sports[0])[0]) : Object.keys(me.sports)[0] || 'pickleball';
   if (!pl || !place(pl).sports.includes(sp)) { const o = PLACES.filter(x => x.sports.includes(sp)); pl = p0 && o.some(x => x.id === p0.court) ? p0.court : (o[0] || PLACES[0]).id; }
-  date = date || iso(addDays(today0(), 1));
+  // Games can only be planned for today or later; a past day opens the form on tomorrow.
+  if (!date || date < todayISO()) date = iso(addDays(today0(), 1));
   const order = [...Object.keys(me.sports), ...SPORTS.map(s => s.id).filter(id => !me.sports[id])];
-  openModal(`${modalHead('Calendar', 'Plan a game', 'Pick a past date to log a game you already played.')}
+  openModal(`${modalHead('Calendar', 'Plan a game', 'Pick a day and time that haven’t happened yet.')}
     <form class="form" id="gameForm">
       <div class="form-grid">
         <div class="field"><label for="g-sport">Sport</label><select id="g-sport">${order.map(id => `<option value="${id}" ${id === sp ? 'selected' : ''}>${sport(id).icon} ${sport(id).name}</option>`).join('')}</select></div>
         <div class="field"><label for="g-place">Where</label><select id="g-place">${placeOptions(sp, pl)}</select></div>
-        <div class="field"><label for="g-date">Date</label><input type="date" id="g-date" value="${date}" required></div>
+        <div class="field"><label for="g-date">Date</label><input type="date" id="g-date" value="${date}" min="${todayISO()}" max="${iso(addDays(today0(), 365))}" required></div>
         <div class="field"><label for="g-time">Time</label><input type="time" id="g-time" value="18:00" required></div>
         <div class="field"><label for="g-with">Playing with</label><select id="g-with"><option value="">Open game</option>${S().matches.map(id => `<option value="${id}" ${id === withId ? 'selected' : ''}>${esc(person(id).name)}</option>`).join('')}</select></div>
         <div class="field"><label for="g-met">New people met</label><input type="number" id="g-met" min="0" max="30" value="0" inputmode="numeric"></div>
@@ -1390,6 +1391,10 @@ document.addEventListener('submit', async e => {
   if (f.id === 'gameForm') {
     const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: Math.max(0, Number($('#g-met').value) || 0), note: $('#g-note').value.trim() };
     if (!g.date || !g.time) return toast('Add a date and a time to save the game.');
+    // Typed dates can skip the picker's min, so check again here (local time, not UTC).
+    const nowHM = (d => `${pad(d.getHours())}:${pad(d.getMinutes())}`)(new Date());
+    if (g.date < todayISO() || (g.date === todayISO() && g.time <= nowHM)) return toast('Games can only be planned for a future date and time.');
+    if (g.date > iso(addDays(today0(), 365))) return toast('Games can be planned up to a year ahead.');
     const notify = $('#g-notify').checked, res = await api.addGame(g);
     if (res.error) return toast('Could not save the game. Check your connection and try again.');
     closeModal();
