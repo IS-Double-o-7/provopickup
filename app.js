@@ -963,6 +963,7 @@ async function sendMessage(convId, text) {
     const input = $('#chatInput'), retryStatus = $('#chatStatus'), retryButton = $('#chatSend');
     if (input) { input.value = text; input.focus(); }
     if (retryStatus) retryStatus.textContent = 'Message could not be sent. Your draft is still here; please try again.';
+    toast('Message could not be sent. Your draft is still here.');  // #chatStatus is screen-reader only; this is the visible notice
     if (retryButton) retryButton.disabled = false;
   }
 }
