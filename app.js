@@ -295,7 +295,7 @@ const rowToGame = r => ({
   with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== ME),
   met: r.new_people_met || 0, note: r.note || '',
 });
-const lastMsg = c => c.messages[c.messages.length - 1];
+const lastMsg = c => c.messages[c.messages.length - 1] || { from: 'them', text: 'New match. Say hello!', at: Date.now() };
 const myHandle = () => '@' + ((S().profile.name || 'you').toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '') || 'you');
 
 function compat(p, me) {
@@ -518,16 +518,82 @@ const api = {
     return S().matches.map(person);
   },
 
-  async conversations() { return [...S().conversations].sort((a, b) => lastMsg(b).at - lastMsg(a).at); },
-  async conversation(id) { return S().conversations.find(c => c.id === id) || null; },
-  async markRead(id) { const c = await api.conversation(id); if (c && c.unread) { c.unread = 0; store.save(); } },
+  // Live accounts: a conversation is every row in `messages` between you and one other
+  // player, plus every mutual match that has not been messaged yet. There is no conversation
+  // table, so "unread" is the messages sent to you whose read_at is still null.
+  async syncConversations() {
+    if (!hasLiveAccount()) return { error: null };
+    const myId = requireProfileId();
+    const [matchesResult, messagesResult] = await Promise.all([
+      db.rpc('my_matches'),
+      db.from('messages').select('message_id,sender_id,receiver_id,message,sent_at,read_at').order('sent_at', { ascending: true }),
+    ]);
+    if (matchesResult.error) return { error: authError('Could not load your matches.', matchesResult.error) };
+    if (messagesResult.error) return { error: authError('Could not load your messages.', messagesResult.error) };
+    const byOther = new Map();
+    for (const row of messagesResult.data || []) {
+      const mine = row.sender_id === myId, other = mine ? row.receiver_id : row.sender_id;
+      if (!byOther.has(other)) byOther.set(other, []);
+      byOther.get(other).push({
+        from: mine ? 'me' : 'them', text: row.message, at: Date.parse(row.sent_at), unread: !mine && !row.read_at,
+        kind: /^(Added a game|Logged our game):/.test(row.message) ? 'game' : 'text',
+      });
+    }
+    const matchIds = (matchesResult.data || []).map(row => row.profile_id);
+    const ids = [...new Set([...matchIds, ...byOther.keys()])];
+    try { await loadPlayersForIds(ids); }
+    catch (error) { return { error }; }
+    const s = S();
+    s.matches = matchIds;
+    s.conversations = ids.filter(id => person(id)).map(id => {
+      const messages = byOther.get(id) || [];
+      const unread = messages.filter(m => m.unread).length;
+      return { id: 'c-' + id, with: id, unread, messages };
+    });
+    store.save();
+    return { error: null };
+  },
+  async conversations() {
+    if (hasLiveAccount()) {
+      const { error } = await api.syncConversations();
+      if (error) throw error;
+    }
+    return [...S().conversations].sort((a, b) => lastMsg(b).at - lastMsg(a).at);
+  },
+  async conversation(id) {
+    if (hasLiveAccount() && !S().conversations.some(c => c.id === id)) {
+      const { error } = await api.syncConversations();
+      if (error) throw error;
+    }
+    return S().conversations.find(c => c.id === id) || null;
+  },
+  async markRead(id) {
+    const c = await api.conversation(id); if (!c || !c.unread) return;
+    c.unread = 0; c.messages.forEach(m => { m.unread = false; }); store.save();
+    if (hasLiveAccount()) {
+      // Only read_at may be updated (migration 006 grants no other column), and only on messages sent to you.
+      const { error } = await db.from('messages').update({ read_at: new Date().toISOString() })
+        .eq('receiver_id', requireProfileId()).eq('sender_id', c.with).is('read_at', null);
+      if (error) console.error('Could not mark messages read', error);
+    }
+  },
   async send(id, text, kind = 'text') {
     const c = await api.conversation(id); if (!c) return {};
-    c.messages.push({ from: 'me', text, at: Date.now(), kind }); store.save();
+    if (hasLiveAccount()) {
+      const { data, error } = await db.from('messages')
+        .insert({ sender_id: requireProfileId(), receiver_id: c.with, message: text })
+        .select('sent_at').single();
+      if (error) throw authError('Your message could not be sent. Please try again.', error);
+      c.messages.push({ from: 'me', text, at: Date.parse(data.sent_at), kind });
+    } else {
+      c.messages.push({ from: 'me', text, at: Date.now(), kind });
+    }
+    store.save();
     const t = todaysChallenge();
     return { done: t.auto === 'message' ? completeToday() : null };
   },
   async demoReply(id, viewing) {
+    if (hasLiveAccount()) return null; // real players reply for themselves
     const c = await api.conversation(id); if (!c) return null;
     const p = person(c.with), mine = [...c.messages].reverse().find(m => m.from === 'me');
     c.messages.push({ from: 'them', text: replyFor(mine ? mine.text : '', p), at: Date.now() });
@@ -535,6 +601,21 @@ const api = {
     store.save(); return c;
   },
 
+  // Courts: PLACES is replaced in place from the venue table so place() stays synchronous.
+  // If the database cannot be reached the hardcoded list stays.
+  async syncPlaces() {
+    const { data, error } = await db.from('venue')
+      .select('venue_id,venue_name,setting,court_count,unit,miles_away,busy_note,latitude,longitude,venue_interest(interest_id)');
+    if (error || !data || !data.length) { if (error) console.error('Could not load courts', error); return { error: error || null }; }
+    PLACES.splice(0, PLACES.length, ...data.map(v => ({
+      id: v.venue_id, name: v.venue_name,
+      sports: (v.venue_interest || []).map(x => x.interest_id).filter(id => SPORTS.some(s => s.id === id)),
+      setting: v.setting || '', count: v.court_count || 0, unit: v.unit || 'courts',
+      mi: Number(v.miles_away) || 0, busy: v.busy_note || '',
+      lat: v.latitude == null ? null : Number(v.latitude), lng: v.longitude == null ? null : Number(v.longitude),
+    })));
+    return { error: null };
+  },
   async places(sportId = 'all') { return PLACES.filter(p => sportId === 'all' || p.sports.includes(sportId)).sort((a, b) => a.mi - b.mi); },
 
   async syncGames() {
@@ -1484,7 +1565,10 @@ function startApp() {
   if (started) return; started = true;
   buildNav();
   go((location.hash || '').slice(1) || 'home');
-  api.syncGames().then(({ error }) => { render(); if (error) toast('Could not reach the database. Showing what is cached.'); });
+  Promise.all([api.syncGames(), api.syncPlaces(), api.syncConversations()]).then(results => {
+    render();
+    if (results.some(r => r.error)) toast('Could not reach the database. Showing what is cached.');
+  });
 }
 // Nothing renders until auth.js reports a signed-in player, and a new
 // player sets up their profile before seeing the app.
