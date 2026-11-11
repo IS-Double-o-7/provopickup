@@ -60,6 +60,7 @@ function setMode(m) {
     b.tabIndex = on ? 0 : -1;
   });
   say('');
+  if (typeof hidePasswords === 'function') hidePasswords();
   if (!gate.hidden) document.title = (m === 'login' ? 'Log in' : 'Sign up') + ' · Rally Provo';
 }
 function say(text, kind = 'error') {
@@ -94,6 +95,7 @@ form.addEventListener('submit', async e => {
   if (pw.length < 6) { say('Passwords need at least 6 characters.'); pass.focus(); return; }
   if (mode === 'signup' && pw !== confirm.value) { say('Those passwords don’t match.'); confirm.focus(); return; }
 
+  hidePasswords();  // never leave a password showing once it's sent
   busy(true);
   try {
     if (mode === 'login') {
@@ -126,8 +128,20 @@ form.addEventListener('submit', async e => {
   }
 });
 
+/* Show / hide password. Our own button, because the browser's built-in eye (Edge)
+   disappears once the field loses focus, e.g. after the "don't match" warning. */
+function setPwVisible(btn, show) {
+  const input = document.getElementById(btn.dataset.pwToggle);
+  input.type = show ? 'text' : 'password';
+  btn.setAttribute('aria-pressed', show);
+  btn.setAttribute('aria-label', (show ? 'Hide ' : 'Show ') + (input === pass ? 'password' : 'confirm password'));
+}
+function hidePasswords() { document.querySelectorAll('[data-pw-toggle]').forEach(b => setPwVisible(b, false)); }
+
 /* Tabs: click, plus arrow keys between the two. */
 document.addEventListener('click', e => {
+  const eye = e.target.closest('[data-pw-toggle]');
+  if (eye) { setPwVisible(eye, eye.getAttribute('aria-pressed') !== 'true'); return; }
   const t = e.target.closest('[data-auth-mode]');
   if (t) { setMode(t.dataset.authMode); email.focus(); return; }
   const out = e.target.closest('[data-auth="sign-out"]');
