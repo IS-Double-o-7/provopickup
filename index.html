@@ -13,7 +13,7 @@
      renders the availability grid as scrambled boxes rather than failing visibly.
      BUMP THIS whenever you change styles.css, config.js, auth.js or app.js:
      today's date, plus -2, -3 and so on for further deploys the same day. -->
-<link rel="stylesheet" href="styles.css?v=2026-11-10-2">
+<link rel="stylesheet" href="styles.css?v=2026-11-11-pwtoggle-2">
 </head>
 <body>
 <div class="auth" id="auth">
@@ -36,8 +36,8 @@
       <p class="muted auth-loading" id="authLoading" role="status">Checking your sign-in…</p>
       <form class="form auth-form" id="authForm" role="tabpanel" aria-labelledby="authTitle" novalidate hidden>
         <div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" required placeholder="you@example.com"></div>
-        <div class="field"><label for="authPassword">Password</label><input id="authPassword" type="password" autocomplete="current-password" minlength="6" required aria-describedby="authPwHint"><small class="muted" id="authPwHint" hidden>At least 6 characters.</small></div>
-        <div class="field" id="authConfirmField" hidden><label for="authConfirm">Confirm password</label><input id="authConfirm" type="password" autocomplete="new-password" minlength="6"></div>
+        <div class="field"><label for="authPassword">Password</label><div class="pw-wrap"><input id="authPassword" type="password" autocomplete="current-password" minlength="6" required aria-describedby="authPwHint"><button type="button" class="pw-toggle" data-pw-toggle="authPassword" aria-controls="authPassword" aria-pressed="false" aria-label="Show password"><svg class="eye-open" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-shut" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.8M6.6 6.6A17.2 17.2 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg></button></div><small class="muted" id="authPwHint" hidden>At least 6 characters.</small></div>
+        <div class="field" id="authConfirmField" hidden><label for="authConfirm">Confirm password</label><div class="pw-wrap"><input id="authConfirm" type="password" autocomplete="new-password" minlength="6"><button type="button" class="pw-toggle" data-pw-toggle="authConfirm" aria-controls="authConfirm" aria-pressed="false" aria-label="Show confirm password"><svg class="eye-open" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-shut" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.8M6.6 6.6A17.2 17.2 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg></button></div></div>
         <p class="auth-msg" id="authMsg" role="alert" hidden></p>
         <button class="btn auth-submit" type="submit" id="authSubmit">Log in</button>
       </form>
@@ -49,13 +49,13 @@
 
 <div class="app" id="app" hidden>
   <aside class="side" aria-label="Main navigation">
-    <div class="brand"><span id="brandMark"></span>Rally<small>Provo</small></div>
+    <a class="brand" href="#home" data-route="home" aria-label="Rally Provo, go to Home"><span id="brandMark"></span>Rally<small>Provo</small></a>
     <nav id="sideNav"></nav>
     <div class="side-foot"><button class="me-btn" data-action="open-profile" id="sideMe"></button></div>
   </aside>
   <div class="min0">
     <header class="topbar">
-      <div class="brand"><span id="brandMark2"></span>Rally</div>
+      <a class="brand" href="#home" data-route="home" aria-label="Rally Provo, go to Home"><span id="brandMark2"></span>Rally</a>
       <button class="me-btn" style="width:auto" data-action="open-profile" id="topMe" aria-label="Your profile"></button>
     </header>
     <main id="main">
@@ -78,8 +78,8 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.js"></script>
-<script src="config.js?v=2026-11-10-2"></script>
-<script src="auth.js?v=2026-11-10-2"></script>
-<script src="app.js?v=2026-11-10-2"></script>
+<script src="config.js?v=2026-11-11-pwtoggle-2"></script>
+<script src="auth.js?v=2026-11-11-pwtoggle-2"></script>
+<script src="app.js?v=2026-11-11-pwtoggle-2"></script>
 </body>
 </html>
