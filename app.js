@@ -907,7 +907,7 @@ async function renderConvList(convs) {
     const stamp = m ? relTime(m.at) : '';
     const isoStamp = m && !Number.isNaN(new Date(m.at).getTime()) ? new Date(m.at).toISOString() : '';
     return `<button type="button" class="conv ${selected ? 'active' : ''} ${c.unread ? 'unread' : ''}" data-action="open-conv" data-id="${esc(c.id)}" aria-pressed="${selected}" aria-label="Open conversation with ${esc(p?.name || 'player')}${unreadLabel}">${avatar(p?.name || 'Player', 44)}<span class="min0"><strong>${esc(p?.name || 'Player')}</strong><span class="last">${esc(preview)}</span></span><span class="conv-meta">${isoStamp ? `<time datetime="${isoStamp}">${stamp}</time>` : ''}${c.unread ? '<i class="dot" aria-hidden="true"></i>' : ''}</span></button>`;
-  }).join('') : `<div class="empty conv-empty"><span class="empty-icon">${ICON.messages}</span><h3>No matches yet</h3><p class="muted">Like a few players in Play. When it’s mutual, your conversations will show up here.</p><button class="btn sm" data-route="play">Find players</button></div>`;
+  }).join('') : `<div class="empty conv-empty"><span class="empty-icon">${ICON.messages}</span><h2>No matches yet</h2><p class="muted">Like a few players in Play. When it’s mutual, your conversations will show up here.</p><button class="btn sm" data-route="play">Find players</button></div>`;
 }
 async function renderChat() {
   const box = $('#chat'); if (!box) return;
