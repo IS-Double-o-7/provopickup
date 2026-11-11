@@ -394,6 +394,17 @@ body:has(#auth:not([hidden])){margin:0}
 .auth-form{margin-top:22px}
 .auth-form .field input{background:var(--surface)}
 .auth-form .field input:focus-visible{outline:2px solid var(--court);outline-offset:1px;border-color:transparent}
+/* Show / hide password. The button sits inside the field's right padding so the
+   input keeps its full 44px hit area and nothing shifts when the icon swaps. */
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:46px}
+.pw-toggle{position:absolute;top:50%;right:5px;transform:translateY(-50%);display:grid;place-items:center;width:34px;height:34px;border-radius:10px;color:var(--muted);background:transparent}
+.pw-toggle:hover{color:var(--fg);background:var(--surface-2)}
+.pw-toggle svg{display:block}
+.pw-toggle .pw-off{display:none}
+.pw-toggle[aria-pressed="true"]{color:var(--fg)}
+.pw-toggle[aria-pressed="true"] .pw-on{display:none}
+.pw-toggle[aria-pressed="true"] .pw-off{display:block}
 .auth-loading{margin-top:22px}
 .auth-submit{width:100%;height:46px;margin-top:4px}
 .auth-msg{padding:10px 12px;border-radius:12px;background:var(--surface);font-size:14px;font-weight:600;border:1.5px solid currentColor}

@@ -59,9 +59,38 @@ function setMode(m) {
     b.setAttribute('aria-selected', on);
     b.tabIndex = on ? 0 : -1;
   });
+  resetPwToggles();
   say('');
   if (!gate.hidden) document.title = (m === 'login' ? 'Log in' : 'Sign up') + ' · Rally Provo';
 }
+/* ---- show / hide password ---- */
+// There was no reveal control at all, and Chrome and Safari add none of their own,
+// so a typo in a field you cannot read meant retyping both boxes or reloading the
+// page — which is exactly what the bug report described.
+function setPwVisible(btn, show) {
+  const input = $('#' + btn.dataset.pwToggle);
+  if (!input) return;
+  const focused = document.activeElement === input;
+  const start = input.selectionStart, end = input.selectionEnd;
+  input.type = show ? 'text' : 'password';
+  btn.setAttribute('aria-pressed', String(show));
+  const label = (show ? 'Hide ' : 'Show ') + (btn.dataset.pwLabel || 'password');
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  // Changing an input's type drops the caret to the end in some browsers, so put
+  // it back; setSelectionRange throws on input types that do not support it.
+  if (focused) {
+    input.focus();
+    if (start !== null) { try { input.setSelectionRange(start, end); } catch (e) { /* not supported here */ } }
+  }
+}
+function resetPwToggles() {
+  document.querySelectorAll('[data-pw-toggle]').forEach(b => setPwVisible(b, false));
+}
+document.querySelectorAll('[data-pw-toggle]').forEach(btn => {
+  btn.addEventListener('click', () => setPwVisible(btn, btn.getAttribute('aria-pressed') !== 'true'));
+});
+
 function say(text, kind = 'error') {
   msg.textContent = text;
   msg.dataset.kind = kind;
