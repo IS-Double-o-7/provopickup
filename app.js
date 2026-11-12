@@ -606,6 +606,23 @@ const api = {
     store.save(); return c;
   },
 
+  // Admin page. Both calls go through database functions (migration 012) that check
+  // the allow-list themselves, so hiding the tab is never the only protection.
+  async checkAdmin() {
+    const { data, error } = await db.rpc('is_admin');
+    return !error && data === true;
+  },
+  // Players per age band (migration 016, admin-only). Resolves to { error } instead of throwing.
+  async ageBands() {
+    const { data, error } = await db.rpc('age_bands');
+    return error ? { error } : { data };
+  },
+  // Counts only.
+  // Resolves to { error } instead of throwing, so the page can say what is missing.
+  async okrDashboard() {
+    const { data, error } = await db.rpc('okr_dashboard');
+    return error ? { error } : { data };
+  },
   // Courts: PLACES is replaced in place from the venue table so place() stays synchronous.
   // If the database cannot be reached the hardcoded list stays.
   async syncPlaces() {
@@ -787,17 +804,21 @@ const brandSVG = `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy
    ===================================================================== */
 const ROUTES = [
   ['home', 'Home', ICON.home], ['play', 'Play', ICON.play], ['messages', 'Messages', ICON.messages], ['courts', 'Courts', ICON.courts],
-  ['calendar', 'Calendar', ICON.calendar], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats],
+  ['calendar', 'Calendar', ICON.calendar], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats], ['admin', 'Admin', ICON.stats],
 ];
-const MORE = ['courts', 'challenge', 'stats'];
-const ui = { route: 'home', conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, focus: null, swiping: false, typing: {}, resetArmed: false };
+const MORE = ['courts', 'challenge', 'stats', 'admin'];
+// The Admin tab exists only for people on the database allow-list (is_admin()). Hiding
+// it here is a convenience; the database refuses everyone else whatever this page does.
+const routes = () => ROUTES.filter(r => r[0] !== 'admin' || ui.isAdmin);
+const moreRoutes = () => MORE.filter(r => r !== 'admin' || ui.isAdmin);
+const ui = { route: 'home', conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, focus: null, swiping: false, typing: {}, resetArmed: false, isAdmin: false };
 const view = r => $('#v-' + r);
 const isWide = () => window.matchMedia('(min-width: 821px)').matches;
 const saveUI = (k, v) => { S().ui[k] = v; store.save(); };
 
 function buildNav() {
   $('#brandMark').innerHTML = brandSVG; $('#brandMark2').innerHTML = brandSVG;
-  $('#sideNav').innerHTML = ROUTES.map(([r, label, ic]) => `<button class="nav-link" data-route="${r}">${ic}<span>${label}</span>${r === 'messages' ? '<span class="count" data-unread hidden></span>' : ''}</button>`).join('');
+  $('#sideNav').innerHTML = routes().map(([r, label, ic]) => `<button class="nav-link" data-route="${r}">${ic}<span>${label}</span>${r === 'messages' ? '<span class="count" data-unread hidden></span>' : ''}</button>`).join('');
   $('#bottomNav').innerHTML = ['home', 'play', 'messages', 'calendar'].map(r => { const [, label, ic] = ROUTES.find(x => x[0] === r); return `<button data-route="${r}">${ic}<span>${label}</span>${r === 'messages' ? '<span class="count" data-unread hidden></span>' : ''}</button>`; }).join('') + `<button data-action="more" data-more>${ICON.more}<span>More</span></button>`;
   renderMe();
 }
@@ -811,7 +832,7 @@ function updateBadges() {
   $$('[data-unread]').forEach(b => { b.hidden = !n; b.textContent = n; });
 }
 function go(route) {
-  if (!ROUTES.some(r => r[0] === route)) route = 'home';
+  if (!routes().some(r => r[0] === route)) route = 'home';
   ui.route = route;
   $$('.view').forEach(v => v.classList.toggle('active', v.dataset.view === route));
   $$('.nav-link[data-route], .bottom-nav [data-route]').forEach(b => b.classList.toggle('active', b.dataset.route === route));
@@ -1193,6 +1214,66 @@ V.stats = async () => {
     </article>`;
 };
 
+/* ---- Admin page (OKR dashboard) ---- */
+// The four Key Results the team set at Sprint 1 planning, computed live from the database.
+// `value` is null when there is nothing to divide by yet, so the tile says so.
+function okrCards(d) {
+  const n = d.players, pct = (a, b) => (b ? Math.round(a / b * 100) : null), per = (a, b) => (b ? Math.round(a / b * 100) / 100 : null);
+  return [
+    { id: 'profile', title: 'Complete profiles', target: '100% of players', unit: '%', value: pct(d.profiles.complete, n), goal: 100,
+      formula: `${d.profiles.complete} of ${plural(n, 'player')} have a name, age and photo`, source: 'profile, profile_private, photo' },
+    { id: 'games', title: 'Players who played', target: '100% of players, every week', unit: '%', value: pct(d.games.players_played_7d, d.games.players_total), goal: 100,
+      formula: `${d.games.players_played_7d} of ${plural(d.games.players_total, 'player')} played a game in the last 7 days`, source: 'event, event_attendee' },
+    { id: 'matches', title: 'New matches', target: '2 per player per week', unit: '', value: per(d.matches.made_7d * 2, n), goal: 2,
+      formula: `${plural(d.matches.made_7d, 'match', 'matches')} made in the last 7 days (each counts for both players)`, source: 'choice' },
+    { id: 'messaged', title: 'Matches that talk', target: '100% of matches', unit: '%', value: pct(d.messaged.pairs_with_message, d.matches.pairs_total), goal: 100,
+      formula: `${d.messaged.pairs_with_message} of ${plural(d.matches.pairs_total, 'matched pair')} have a message`, source: 'choice, messages' },
+  ];
+}
+// Players by age band (Rally Provo is 18+). Counts only; the database function is
+// admin-only. If it is missing or refuses, this section is simply left out.
+function ageCard(res) {
+  const a = res && res.data;
+  if (!a || !Array.isArray(a.bands)) return '';
+  const total = a.players || 0, max = Math.max(1, ...a.bands.map(b => b.players));
+  return `<article class="card block" aria-labelledby="age-title">
+    <p class="eyebrow" style="margin-bottom:4px">Who is playing</p><h3 id="age-title">Players by age</h3>
+    <div style="margin-top:8px">${a.bands.map(b => `<div class="age-row"><div class="between"><strong>${esc(b.band)}</strong><span class="muted small tnum">${plural(b.players, 'player')}</span></div><div class="meter admin-meter" role="img" aria-label="${esc(b.band)}: ${plural(b.players, 'player')}"><i style="width:${Math.round(b.players / max * 100)}%"></i></div></div>`).join('')}</div>
+    <small class="admin-note muted">${a.no_birthday ? `${plural(a.no_birthday, 'player')} of ${total} ${a.no_birthday === 1 ? 'has' : 'have'} not added a birthday yet. ` : ''}Source: profile_private (counts only).</small>
+  </article>`;
+}
+V.admin = async () => {
+  // render() swaps the whole view, which would drop keyboard focus from the Refresh
+  // button every 30 seconds. Remember it and put it back.
+  const hadFocus = view('admin').contains(document.activeElement);
+  const keepFocus = () => { if (hadFocus) { const b = $('#v-admin [data-action="admin-refresh"]'); if (b) b.focus(); } };
+  const [{ data: d, error }, ages] = await Promise.all([api.okrDashboard(), api.ageBands()]);
+  const head = `<header class="page-head"><div><p class="eyebrow">Team only</p><h1>Admin page</h1>
+    <p class="sub">Live numbers for our four Key Results. They are counts from the database, not saved figures.</p></div>
+    <button class="btn ghost" data-action="admin-refresh">Refresh</button></header>`;
+  if (error || !d) {
+    console.error(error);
+    view('admin').innerHTML = head + `<div class="card empty"><h3>Numbers are not available</h3><p class="muted">This page needs the latest database update, or you are offline. Nothing else is affected.</p></div>`;
+    keepFocus();
+    return;
+  }
+  const when = new Date(d.generated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  view('admin').innerHTML = head + `
+    <div class="tiles admin-tiles">${okrCards(d).map(c => {
+      const shown = c.value === null ? '–' : c.value + c.unit, fill = c.value === null ? 0 : Math.min(100, Math.round(c.value / c.goal * 100));
+      return `<article class="card tile" aria-labelledby="okr-${c.id}">
+        <small id="okr-${c.id}">${esc(c.title)}</small><b class="tnum">${shown}</b><small>Target: ${esc(c.target)}</small>
+        <div class="meter admin-meter" role="img" aria-label="${fill}% of target"><i style="width:${fill}%"></i></div>
+        <small class="admin-note">${esc(c.value === null ? 'Nothing to measure yet.' : c.formula)}</small>
+        <small class="admin-note muted">Source: ${esc(c.source)}</small></article>`;
+    }).join('')}</div>
+    ${ageCard(ages)}
+    <p class="muted small block" role="status">Updated ${when}. Refreshes every 30 seconds while this page is open. Weekly figures use the last 7 days.</p>`;
+  keepFocus();
+  clearTimeout(ui.adminTimer);
+  ui.adminTimer = setTimeout(() => { if (ui.route === 'admin') render(); }, 30000);
+};
+
 /* =====================================================================
    7. Modals, sheet, toast
    ===================================================================== */
@@ -1200,7 +1281,7 @@ function openModal(html) { $('#modalCard').innerHTML = html; $('#modal').hidden 
 function closeModal() { $('#modal').hidden = true; $('#modalCard').innerHTML = ''; }
 const modalHead = (eyebrow, title, sub = '') => `<div class="modal-head"><div><p class="eyebrow">${eyebrow}</p><h2>${title}</h2>${sub ? `<p class="muted small" style="margin-top:6px">${sub}</p>` : ''}</div><button class="icon-btn" type="button" data-action="close" aria-label="Close">${ICON.x}</button></div>`;
 function openSheet() {
-  $('#sheetCard').innerHTML = MORE.map(r => { const [, label, ic] = ROUTES.find(x => x[0] === r); return `<button class="nav-link ${ui.route === r ? 'active' : ''}" data-route="${r}">${ic}<span>${label}</span></button>`; }).join('') + `<button class="nav-link" data-action="open-profile">${ICON.user}<span>Your profile</span></button>`;
+  $('#sheetCard').innerHTML = moreRoutes().map(r => { const [, label, ic] = ROUTES.find(x => x[0] === r); return `<button class="nav-link ${ui.route === r ? 'active' : ''}" data-route="${r}">${ic}<span>${label}</span></button>`; }).join('') + `<button class="nav-link" data-action="open-profile">${ICON.user}<span>Your profile</span></button>`;
   $('#sheet').hidden = false;
 }
 function closeSheet() { $('#sheet').hidden = true; }
@@ -1414,6 +1495,7 @@ document.addEventListener('click', async e => {
       break; }
 
     case 'stats-range': saveUI('statsRange', id); render(); break;
+    case 'admin-refresh': render(); break;
   }
 });
 
@@ -1523,7 +1605,11 @@ let started = false;
 function startApp() {
   if (started) return; started = true;
   buildNav();
-  go((location.hash || '').slice(1) || 'home');
+  // An admin who reloads on #admin must land back on it. The admin check is async, so
+  // remember where they wanted to go and take them there once it says yes.
+  const wanted = (location.hash || '').slice(1) || 'home';
+  go(wanted);
+  api.checkAdmin().then(ok => { if (!ok) return; ui.isAdmin = true; buildNav(); if (wanted === 'admin') { go('admin'); return; } $$('.nav-link[data-route]').forEach(b => b.classList.toggle('active', b.dataset.route === ui.route)); });
   Promise.all([api.syncGames(), api.syncPlaces(), api.syncConversations()]).then(results => {
     render();
     if (results.some(r => r.error)) toast('Could not reach the database. Showing what is cached.');
