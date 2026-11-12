@@ -254,33 +254,6 @@ section.sec{margin-top:36px}
 .game b{display:block;font-variant-numeric:tabular-nums}
 .game small{display:block}
 
-/* ---------- reels ---------- */
-.reel-controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
-.reel-controls .chips{flex:1;min-width:0}
-.reel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-top:18px}
-.reel{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
-.reel-media{position:relative;isolation:isolate;overflow:hidden;aspect-ratio:4/5;color:#fff}
-.reel-media .glyph{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:64px;line-height:1;filter:drop-shadow(0 6px 14px rgba(0,0,0,.35))}
-.reel-type{position:absolute;top:12px;left:12px}
-.reel-menu{position:absolute;top:8px;right:8px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.35);color:#fff}
-.reel-menu svg{width:18px;height:18px}
-.reel-cap{position:absolute;inset:auto 0 0 0;padding:14px;display:flex;flex-direction:column;gap:4px}
-.reel-cap strong{font:800 23px/1 var(--f-display);text-transform:uppercase}
-.reel-cap span{font-size:13.5px;color:rgba(255,255,255,.85)}
-.reel-meta{display:flex;align-items:center;gap:10px;padding:12px 14px}
-.reel-meta b{display:block;font-size:14px}
-.reel-meta small{display:block}
-.follow{margin-left:auto;flex:none;height:30px;padding:0 12px;border-radius:999px;border:1.5px solid var(--line);font-size:13px;font-weight:700}
-.follow.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-.reel-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line)}
-.reel-actions button{height:44px;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:13px;font-weight:600}
-.reel-actions button:hover{color:var(--fg)}
-.reel-actions svg{width:17px;height:17px}
-.reel-actions .liked{color:var(--clay)}
-.reel-actions .liked svg{fill:currentColor}
-.reel-actions .saved{color:var(--court)}
-.reel-actions .saved svg{fill:currentColor}
-.note{display:flex;gap:8px;align-items:center;margin-top:20px;color:var(--muted);font-size:13.5px}
 
 /* ---------- challenge ---------- */
 .streak-badge{display:flex;align-items:center;gap:12px;padding:10px 16px 10px 12px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
@@ -364,7 +337,6 @@ section.sec{margin-top:36px}
 .match-avs{display:flex;align-items:center;margin:8px 0}
 .match-avs .avatar{box-shadow:0 0 0 4px var(--surface)}
 .match-avs .avatar+.avatar{margin-left:-14px}
-.comment{padding:10px 0;border-top:1px solid var(--line)}
 .sheet{position:fixed;inset:0;z-index:55;display:flex;align-items:flex-end;background:rgba(6,12,18,.45)}
 .sheet-card{width:100%;padding:12px 12px calc(16px + env(safe-area-inset-bottom,0px));border-radius:22px 22px 0 0;background:var(--surface)}
 .sheet-card .nav-link{padding:14px 12px;font-size:16px}
