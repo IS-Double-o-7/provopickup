@@ -48,6 +48,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | L9 | Phone numbers and birthdays are visible only to their owner | Complete | Live database: a signed-out client reads 0 rows from `profile_private` and cannot read `auth_uid` (#8, #11) |
 | L10 | A user cannot create or change another user's profile | Complete | Live database: an update against another profile changes 0 rows; a second profile per account is rejected (#7) |
 | L11 | A player can permanently delete their profile and login from **Your profile** (type DELETE to confirm) | Not complete | Works against a stand-in database: profile, photo, sports, availability, swipes and login removed, old password rejected. Needs migration 009 applied, then a live check |
+| L12 | Players must be 18 or older: profile setup requires a birthday, and anyone under 18 can't finish it or change their birthday to under 18 | Not complete | Front end done (#61): tested 'turns 18 tomorrow' (refused, nothing saved) and 'turns 18 today' (allowed). Accounts made earlier get an 'Add birthday' reminder. A database check for 18+ is still to come (#7, Jordan) |
 
 ### Matching (Play page)
 
