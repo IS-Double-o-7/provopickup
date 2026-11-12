@@ -104,6 +104,32 @@ carries. The source is `docs/architecture.svg`.
 
 ---
 
+## Data Flow Diagram
+
+![Rally Provo level 1 data flow diagram](docs/dfd-level1.png)
+
+Yourdon/DeMarco notation: rectangles are external entities, numbered circles are
+processes, and the open-ended boxes on the right are data stores. Every arrow is
+labeled with the data it carries. The Level 0 context diagram is kept alongside it in
+Lucidchart and is not exported here yet.
+
+| Process | What it does | Data store |
+|---|---|---|
+| 1.0 Manage Profile | Sign-in, sign-up and profile editing | D1 `profile` |
+| 2.0 Match Players | Swipe, like/pass, mutual match | D2 `choice` |
+| 3.0 Exchange Messages | Chat between matched players | D3 `messages` |
+| 4.0 Schedule Games | Book, cancel and restore games | D4 `event` / `event_attendee` |
+| 5.0 Browse Courts | Court search and listings | D5 `venue` |
+| 6.0 Manage Venues | Adding and editing courts (**planned**) | D5 `venue` |
+
+A DFD shows the designed flow, not what is built today. Right now only **4.0 Schedule
+Games** is backed by the database end to end. Processes 1.0, 2.0, 3.0 and 5.0 run on
+browser state or sample data — the tables exist, and the messaging wiring is waiting in
+PR #39. **6.0 Manage Venues** belongs to the planned admin portal described above; there
+is no add-court screen in the app today.
+
+---
+
 ## ERD
 
 ![Rally Provo entity relationship diagram](docs/erd.png)
@@ -383,7 +409,9 @@ See **Behavioral Requirements** above for what has been checked end to end.
 - `app.js` – data, logic and every screen
 - `db/schema.sql` – the tables from the ERD
 - `db/seed.sql` – sample rows for every table
-- `docs/erd.png` – the diagram above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
+- `docs/erd.png` – the ERD above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
+- `docs/dfd-level1.png` – the level 1 data flow diagram above (source lives in Lucidchart)
+- `docs/dfd-prompt.md` – the prompts used to generate the data flow diagrams
 
 ### Bump the asset version when you change the front end
 
