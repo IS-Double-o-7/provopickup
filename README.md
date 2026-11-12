@@ -1,7 +1,7 @@
 # Rally Provo
 
 A sports-matching app for finding people to play with around Provo: swipe to match
-players, chat, plan games, browse courts and reels, and track daily challenges and stats.
+players, chat, plan games, browse courts, and track daily challenges and stats.
 
 **Live site:** <https://is-double-o-7.github.io/provopickup/> (GitHub Pages, deployed from `main`)
 
@@ -75,7 +75,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | X1 | Message a match (chat saved in the database) | Complete | #39: messages saved in Postgres, only to mutual matches, unread badge clears when read; two-player test passed |
 | X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list |
 | X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules (contrast with tinted backgrounds, labels, names, landmarks, headings, ARIA) finds no issues on Log in, Sign up, Profile setup, Your profile, Play, Messages, Calendar and Courts in light and dark mode after the Courts label fix; Home still has a heading-order note |
-| X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Reels, Challenge and Stats not checked yet |
+| X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Challenge and Stats not checked yet |
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
 | X6 | The four Key Results update automatically from user activity | Not complete | Not started |
 | X7 | Admin portal | Not complete | Not started |
@@ -368,7 +368,7 @@ Postgres (and the toast's **Undo** puts it back).
 | **Play: deck, likes, passes, undo, matches** | **Supabase Postgres** (`choice`, `my_matches()`) |
 | **Calendar: book, view and cancel a game** | **Supabase Postgres**, not yet tied to the signed-in account |
 | Stats and streaks | Computed from the same calendar events |
-| Messages, reels, challenges, courts and maps | Still browser `localStorage` or sample data |
+| Challenges and maps | Still browser `localStorage` or sample data |
 
 See **Behavioral Requirements** above for what has been checked end to end.
 
@@ -414,7 +414,7 @@ If you are testing the live site and something looks wrong, hard-refresh
 ### How `app.js` is organized
 
 1. **Helpers** – date formatting, escaping, icons
-2. **Reference data** – sports, courts, sample players, challenges, reels
+2. **Reference data** – sports, courts, sample players, challenges
 3. **Store + API** – the only place data is read or saved
 4. **Supabase** – the database client and row mapping
 5. **Illustrations** – court drawings used for cards and covers
@@ -427,6 +427,5 @@ If you are testing the live site and something looks wrong, hard-refresh
 ## Notes
 
 - Players, courts and community numbers are sample data.
-- Players' profile photos are real uploads. Demo players without a photo show initials,
-  and reel covers are still drawn court illustrations.
+- Players' profile photos are real uploads. Demo players without a photo show initials.
 - Fonts load from Google Fonts and fall back to system fonts offline.

@@ -75,7 +75,7 @@ the contradiction before acting.
 - `db/schema.sql`, `db/seed.sql` — rebuild the database and sample data.
 - `docs/erd.png`, `docs/erd.svg`, `docs/make_erd.py` — entity relationship diagram and its generator.
 - Supabase/Postgres is the database. Calendar create / read / cancel / restore is the one database-backed vertical slice.
-- Profile, matching, messages, reels, and challenges still run on local browser state or sample data.
+- Profile, matching, messages, and challenges still run on local browser state or sample data.
 - Default branch is `main`.
 
 Not yet decided — **do not choose unilaterally:**
