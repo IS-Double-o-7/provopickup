@@ -623,7 +623,7 @@ const api = {
   async syncGames() {
     const cols = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)';
     let { data, error } = await db.from('event').select(cols + ', score');
-    // Before migration 015 is applied there is no score column; load games without it.
+    // Before migration 016 is applied there is no score column; load games without it.
     if (error && (error.code === '42703' || /score/.test(error.message || ''))) ({ data, error } = await db.from('event').select(cols));
     if (error) { console.error('Could not load games', error); return { error }; }
     S().games = data.map(rowToGame); store.save(); return { error: null };
@@ -1500,7 +1500,7 @@ document.addEventListener('submit', async e => {
   if (f.id === 'resultForm') {
     const r = { score: $('#r-score').value.trim().slice(0, 40), met: Math.min(30, Math.max(0, Math.round(Number($('#r-met').value) || 0))), note: $('#r-note').value.trim() };
     const res = await api.saveResult(f.dataset.id, r);
-    if (res.error) return toast(/score|column|permission|42501|42703/i.test(`${res.error.code} ${res.error.message}`) ? 'Saving results isn’t switched on yet. Ask the team to apply migration 015.' : 'Could not save the result. Check your connection and try again.');
+    if (res.error) return toast(/score|column|permission|42501|42703/i.test(`${res.error.code} ${res.error.message}`) ? 'Saving results isn’t switched on yet. Please try again later.' : 'Could not save the result. Check your connection and try again.');
     closeModal(); render(); return toast('Result saved. Your stats are updated.');
   }
   if (f.id === 'gameForm') {
