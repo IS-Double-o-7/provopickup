@@ -1117,15 +1117,15 @@ function placeCard(pl, upcoming) {
   const regulars = PEOPLE.filter(p => p.court === pl.id), mine = upcoming.filter(g => g.place === pl.id);
   const matched = S().matches;
   return `<article class="card place">
-    <button class="place-row" data-action="toggle-place" data-id="${pl.id}" aria-expanded="${open}">
+    <button class="place-row" data-action="toggle-place" data-id="${esc(pl.id)}" aria-expanded="${open}">
       <span class="place-ic">${courtSVG(pl.sports[0])}</span>
-      <span class="min0"><strong>${esc(pl.name)}</strong><small class="muted">${pl.sports.map(s => sport(s).name).join(' · ')}</small><small class="muted">${[pl.setting, pl.count ? `${pl.count} ${pl.unit}` : '', pl.mi ? `${pl.mi} mi` : ''].filter(Boolean).join(' · ')}</small></span>
+      <span class="min0"><strong>${esc(pl.name)}</strong><small class="muted">${pl.sports.map(s => sport(s).name).join(' · ')}</small><small class="muted">${[pl.setting, pl.count ? `${pl.count} ${pl.unit}` : '', pl.mi ? `${pl.mi} mi` : ''].filter(Boolean).map(esc).join(' · ')}</small></span>
       <span class="pill ${tone}">${esc(pl.busy)}</span>
     </button>
     ${open ? `<div class="place-detail">
       <div><p class="eyebrow">Players who play here</p>${regulars.length ? regulars.map(p => `<div class="list-row">${avatar(p.name, 32)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ')}</small></div>${matched.includes(p.id) ? `<button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button>` : `<button class="btn ghost sm" data-action="play-person" data-id="${p.id}">View</button>`}</div>`).join('') : '<p class="muted small">No regulars listed yet.</p>'}</div>
       <div><p class="eyebrow">Your games here</p>${mine.length ? mine.map(gameRow).join('') : '<p class="muted small">Nothing planned here yet.</p>'}</div>
-      <div class="row full"><button class="btn sm" data-action="add-game" data-place="${pl.id}">${ICON.plus} Plan a game here</button><a class="btn ghost sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name + ', Provo, UT')}" target="_blank" rel="noopener">Directions</a></div>
+      <div class="row full"><button class="btn sm" data-action="add-game" data-place="${esc(pl.id)}">${ICON.plus} Plan a game here</button><a class="btn ghost sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name + ', Provo, UT')}" target="_blank" rel="noopener">Directions</a></div>
     </div>` : ''}
   </article>`;
 }
@@ -1295,7 +1295,7 @@ function toast(msg, action) {
 }
 
 const placeOptions = (sp, selected) => { const opts = PLACES.filter(p => p.sports.includes(sp)); return (opts.length ? opts : PLACES).map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}</option>`).join(''); };
-const COURT_BUSY = ['Quiet', 'Steady all day', 'Busy evenings', 'Busy weekends'];
+const COURT_BUSY = ['Quiet', 'Quiet weekdays', 'Steady all day', 'Busy evenings', 'Busy weekends'];
 const COURT_UNITS = ['courts', 'fields', 'nets', 'lanes'];
 function openCourtModal() {
   openModal(`${modalHead('Courts', 'Add a court', 'It shows up for everyone in Provo, so use the name people already call it.')}
@@ -1339,7 +1339,7 @@ function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
 }
 function openResultModal(id) {
   const g = S().games.find(x => String(x.id) === String(id)); if (!g) return;
-  openModal(`${modalHead('Calendar', g.score || g.met ? 'Edit result' : 'Add result', `${sport(g.sport).icon} ${sport(g.sport).name} at ${place(g.place).name}, ${fmtDay(g.date)} at ${fmtTime(g.time)}`)}
+  openModal(`${modalHead('Calendar', g.score || g.met ? 'Edit result' : 'Add result', `${sport(g.sport).icon} ${sport(g.sport).name} at ${esc(place(g.place).name)}, ${fmtDay(g.date)} at ${fmtTime(g.time)}`)}
     <form class="form" id="resultForm" data-id="${esc(g.id)}">
       <div class="form-grid">
         <div class="field"><label for="r-score">Score <span class="muted" style="font-weight:500">(optional)</span></label><input id="r-score" maxlength="40" value="${esc(g.score || '')}" placeholder="e.g. 11-7, 9-11" autocomplete="off"></div>
