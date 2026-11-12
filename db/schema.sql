@@ -114,8 +114,15 @@ create table venue (
   -- Geocoded from OpenStreetMap. Every venue must be mappable (Issue #26).
   latitude    numeric(9,6) not null,
   longitude   numeric(9,6) not null,
+  -- Who added this court (migration 014). Null means it came from the seed,
+  -- which is why the delete policy below can never remove a seeded court.
+  added_by    text references profile(profile_id) on delete set null,
   constraint venue_latitude_range  check (latitude  between -90  and 90),
-  constraint venue_longitude_range check (longitude between -180 and 180)
+  constraint venue_longitude_range check (longitude between -180 and 180),
+  constraint venue_name_not_blank  check (btrim(venue_name) <> '' and length(venue_name) <= 80),
+  constraint venue_court_count_sane check (court_count is null or court_count between 1 and 99),
+  -- Rally Provo is a Provo app, so a court elsewhere is a typo or spam.
+  constraint venue_in_utah_county  check (latitude between 39.9 and 40.6 and longitude between -112.3 and -111.0)
 );
 
 -- Many-to-many: a court hosts several sports.
@@ -234,6 +241,14 @@ create policy "read photo"                on photo                for select to 
 
 create policy "read venue"                on venue                for select to anon, authenticated using (true);
 create policy "read venue_interest"       on venue_interest       for select to anon, authenticated using (true);
+
+-- Courts are added by players (migration 014). A player may add a court only in
+-- their own name and remove only one they added; nothing lets anyone edit a
+-- court or delete a seeded one.
+create policy "add venue"                 on venue                for insert to authenticated with check (added_by = public.current_profile_id());
+create policy "remove own venue"          on venue                for delete to authenticated using (added_by is not null and added_by = public.current_profile_id());
+create policy "add venue_interest"        on venue_interest       for insert to authenticated with check (exists (select 1 from venue v where v.venue_id = venue_interest.venue_id and v.added_by = public.current_profile_id()));
+create policy "remove own venue_interest" on venue_interest       for delete to authenticated using (exists (select 1 from venue v where v.venue_id = venue_interest.venue_id and v.added_by = public.current_profile_id()));
 
 -- A pending like is not visible: you may read only the rows where you are the
 -- swiper. Mutual matches come back through my_matches().

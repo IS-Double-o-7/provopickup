@@ -10,6 +10,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const DAY = 864e5;
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const slug = v => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
 const parseISO = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const todayISO = () => iso(today0());
@@ -620,6 +621,40 @@ const api = {
   },
   async places(sportId = 'all') { return PLACES.filter(p => sportId === 'all' || p.sports.includes(sportId)).sort((a, b) => a.mi - b.mi); },
 
+  // Adding a court. venue.latitude/longitude are NOT NULL (Issue #26), so the form
+  // takes an address and geocodes it with OpenStreetMap Nominatim — the same source
+  // the seeded courts came from. No key, so nothing secret reaches the browser.
+  async geocode(address) {
+    try {
+      const q = encodeURIComponent(`${address}, Provo, Utah`);
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${q}`, { headers: { Accept: 'application/json' } });
+      if (!r.ok) return null;
+      const hits = await r.json();
+      if (!Array.isArray(hits) || !hits.length) return null;
+      const lat = Number(hits[0].lat), lng = Number(hits[0].lon);
+      return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    } catch (error) { console.error('Could not look up that address', error); return null; }
+  },
+
+  // The insert is attributed to the signed-in player: the "add venue" policy in
+  // migration 014 refuses any row whose added_by is not you, so a signed-out
+  // player is stopped by the database, not only by the hidden button.
+  async addCourt(c) {
+    if (!hasLiveAccount()) return { error: authError('Sign in to add a court.') };
+    const myId = requireProfileId();
+    const id = `${slug(c.name) || 'court'}-${Math.random().toString(36).slice(2, 6)}`;
+    const { error } = await db.from('venue').insert({
+      venue_id: id, venue_name: c.name, setting: c.setting, court_count: c.count,
+      unit: c.unit, busy_note: c.busy, latitude: c.lat, longitude: c.lng, added_by: myId,
+    });
+    if (error) return { error };
+    // Losing the sport tags would hide the court behind every filter chip, so this
+    // failure is reported rather than swallowed, even though the court itself saved.
+    const tags = await db.from('venue_interest').insert(c.sports.map(s => ({ venue_id: id, interest_id: s })));
+    await api.syncPlaces();
+    return { error: null, id, tagError: tags.error || null };
+  },
+
   async syncGames() {
     const cols = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)';
     let { data, error } = await db.from('event').select(cols + ', score');
@@ -1071,7 +1106,8 @@ V.courts = async () => {
   const used = [...new Set(PLACES.flatMap(p => p.sports))];
   view('courts').innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Around Provo</p><h1>Courts</h1>
-      <p class="sub">Where people are playing. Open a spot to see who plays there and plan a game.</p></div></header>
+      <p class="sub">Where people are playing. Open a spot to see who plays there and plan a game.</p></div>
+      <button class="btn" data-action="add-court">${ICON.plus} Add a court</button></header>
     ${sportChips('place-filter', sf, SPORTS.map(s => s.id).filter(id => used.includes(id)))}
     <div class="places block">${list.map(pl => placeCard(pl, upcoming)).join('') || `<div class="card empty"><h3>No spots for this sport yet</h3></div>`}</div>`;
 };
@@ -1081,15 +1117,15 @@ function placeCard(pl, upcoming) {
   const regulars = PEOPLE.filter(p => p.court === pl.id), mine = upcoming.filter(g => g.place === pl.id);
   const matched = S().matches;
   return `<article class="card place">
-    <button class="place-row" data-action="toggle-place" data-id="${pl.id}" aria-expanded="${open}">
+    <button class="place-row" data-action="toggle-place" data-id="${esc(pl.id)}" aria-expanded="${open}">
       <span class="place-ic">${courtSVG(pl.sports[0])}</span>
-      <span class="min0"><strong>${esc(pl.name)}</strong><small class="muted">${pl.sports.map(s => sport(s).name).join(' · ')}</small><small class="muted">${pl.setting} · ${pl.count} ${pl.unit} · ${pl.mi} mi</small></span>
+      <span class="min0"><strong>${esc(pl.name)}</strong><small class="muted">${pl.sports.map(s => sport(s).name).join(' · ')}</small><small class="muted">${[pl.setting, pl.count ? `${pl.count} ${pl.unit}` : '', pl.mi ? `${pl.mi} mi` : ''].filter(Boolean).map(esc).join(' · ')}</small></span>
       <span class="pill ${tone}">${esc(pl.busy)}</span>
     </button>
     ${open ? `<div class="place-detail">
       <div><p class="eyebrow">Players who play here</p>${regulars.length ? regulars.map(p => `<div class="list-row">${avatar(p.name, 32)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ')}</small></div>${matched.includes(p.id) ? `<button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button>` : `<button class="btn ghost sm" data-action="play-person" data-id="${p.id}">View</button>`}</div>`).join('') : '<p class="muted small">No regulars listed yet.</p>'}</div>
       <div><p class="eyebrow">Your games here</p>${mine.length ? mine.map(gameRow).join('') : '<p class="muted small">Nothing planned here yet.</p>'}</div>
-      <div class="row full"><button class="btn sm" data-action="add-game" data-place="${pl.id}">${ICON.plus} Plan a game here</button><a class="btn ghost sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name + ', Provo, UT')}" target="_blank" rel="noopener">Directions</a></div>
+      <div class="row full"><button class="btn sm" data-action="add-game" data-place="${esc(pl.id)}">${ICON.plus} Plan a game here</button><a class="btn ghost sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name + ', Provo, UT')}" target="_blank" rel="noopener">Directions</a></div>
     </div>` : ''}
   </article>`;
 }
@@ -1259,6 +1295,27 @@ function toast(msg, action) {
 }
 
 const placeOptions = (sp, selected) => { const opts = PLACES.filter(p => p.sports.includes(sp)); return (opts.length ? opts : PLACES).map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}</option>`).join(''); };
+const COURT_BUSY = ['Quiet', 'Quiet weekdays', 'Steady all day', 'Busy evenings', 'Busy weekends'];
+const COURT_UNITS = ['courts', 'fields', 'nets', 'lanes'];
+function openCourtModal() {
+  openModal(`${modalHead('Courts', 'Add a court', 'It shows up for everyone in Provo, so use the name people already call it.')}
+    <form class="form" id="courtForm">
+      <div class="field"><label for="c-name">Name</label><input id="c-name" maxlength="80" placeholder="Rotary Park Courts" required></div>
+      <div class="field"><label for="c-address">Address or landmark</label><input id="c-address" maxlength="120" placeholder="1460 N 1300 W" required>
+        <small class="muted">We look this up on the map, so a street address works best. Provo is assumed.</small></div>
+      <fieldset class="field"><legend>Sports played here</legend>
+        <div class="check-grid">${SPORTS.map(sp => `<label class="check"><input type="checkbox" name="c-sport" value="${sp.id}"> ${sp.icon} ${esc(sp.name)}</label>`).join('')}</div>
+      </fieldset>
+      <div class="form-grid">
+        <div class="field"><label for="c-setting">Setting</label><select id="c-setting"><option>Outdoor</option><option>Indoor</option></select></div>
+        <div class="field"><label for="c-count">How many</label><input type="number" id="c-count" min="1" max="99" value="2" inputmode="numeric"></div>
+        <div class="field"><label for="c-unit">Of what</label><select id="c-unit">${COURT_UNITS.map(u => `<option>${u}</option>`).join('')}</select></div>
+        <div class="field"><label for="c-busy">How busy</label><select id="c-busy">${COURT_BUSY.map(b => `<option>${b}</option>`).join('')}</select></div>
+      </div>
+      <div class="row"><button class="btn" type="submit" id="c-save">Add court</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
+      <span id="c-status" class="sr-only" role="status" aria-live="polite"></span>
+    </form>`);
+}
 function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
   const me = S().profile, p0 = withId ? person(withId) : null;
   if (!sp) sp = pl ? place(pl).sports[0] : p0 ? ((p0.sports.find(([s]) => me.sports[s]) || p0.sports[0])[0]) : Object.keys(me.sports)[0] || 'pickleball';
@@ -1282,7 +1339,7 @@ function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
 }
 function openResultModal(id) {
   const g = S().games.find(x => String(x.id) === String(id)); if (!g) return;
-  openModal(`${modalHead('Calendar', g.score || g.met ? 'Edit result' : 'Add result', `${sport(g.sport).icon} ${sport(g.sport).name} at ${place(g.place).name}, ${fmtDay(g.date)} at ${fmtTime(g.time)}`)}
+  openModal(`${modalHead('Calendar', g.score || g.met ? 'Edit result' : 'Add result', `${sport(g.sport).icon} ${sport(g.sport).name} at ${esc(place(g.place).name)}, ${fmtDay(g.date)} at ${fmtTime(g.time)}`)}
     <form class="form" id="resultForm" data-id="${esc(g.id)}">
       <div class="form-grid">
         <div class="field"><label for="r-score">Score <span class="muted" style="font-weight:500">(optional)</span></label><input id="r-score" maxlength="40" value="${esc(g.score || '')}" placeholder="e.g. 11-7, 9-11" autocomplete="off"></div>
@@ -1427,6 +1484,7 @@ document.addEventListener('click', async e => {
   const id = a.dataset.id, s = S();
   switch (a.dataset.action) {
     case 'close': closeModal(); break;
+    case 'add-court': openCourtModal(); break;
     case 'more': openSheet(); break;
     case 'open-profile': closeSheet(); await openProfile(); break;
     case 'retry-profile': { const user = window.RallyAuth && window.RallyAuth.user(); if (user) await boot(user); break; }
@@ -1502,6 +1560,33 @@ document.addEventListener('submit', async e => {
     const res = await api.saveResult(f.dataset.id, r);
     if (res.error) return toast(/score|column|permission|42501|42703/i.test(`${res.error.code} ${res.error.message}`) ? 'Saving results isn’t switched on yet. Ask the team to apply migration 015.' : 'Could not save the result. Check your connection and try again.');
     closeModal(); render(); return toast('Result saved. Your stats are updated.');
+  }
+  if (f.id === 'courtForm') {
+    const name = $('#c-name').value.trim();
+    const address = $('#c-address').value.trim();
+    const sports = [...document.querySelectorAll('input[name="c-sport"]:checked')].map(i => i.value);
+    if (!name || !address) return toast('Add a name and an address.');
+    if (!sports.length) return toast('Pick at least one sport played here.');
+    const save = $('#c-save'), status = $('#c-status');
+    save.disabled = true; save.textContent = 'Looking up the address…'; status.textContent = 'Looking up the address.';
+    const at = await api.geocode(address);
+    if (!at) { save.disabled = false; save.textContent = 'Add court'; status.textContent = ''; return toast('We could not find that address. Try a street address.'); }
+    save.textContent = 'Saving…';
+    const res = await api.addCourt({
+      name, sports, setting: $('#c-setting').value, count: Math.max(1, Number($('#c-count').value) || 1),
+      unit: $('#c-unit').value, busy: $('#c-busy').value, lat: at.lat, lng: at.lng,
+    });
+    save.disabled = false; save.textContent = 'Add court'; status.textContent = '';
+    if (res.error) {
+      // 42501 is the row-level security refusal: signed out, or the profile is not finished.
+      const denied = res.error.code === '42501' || res.error instanceof Error;
+      return toast(denied ? 'Sign in and finish your profile to add a court.' : 'Could not save the court. Check your connection and try again.');
+    }
+    closeModal();
+    ui.openPlace = res.id;
+    saveUI('placeSport', 'all');
+    render();
+    toast(res.tagError ? 'Court added, but its sports did not save.' : `${name} is on the map.`);
   }
   if (f.id === 'gameForm') {
     const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: 0, note: $('#g-note').value.trim() };
