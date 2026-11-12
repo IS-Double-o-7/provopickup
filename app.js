@@ -612,6 +612,11 @@ const api = {
     const { data, error } = await db.rpc('is_admin');
     return !error && data === true;
   },
+  // Players per age band (migration 016, admin-only). Resolves to { error } instead of throwing.
+  async ageBands() {
+    const { data, error } = await db.rpc('age_bands');
+    return error ? { error } : { data };
+  },
   // Counts only.
   // Resolves to { error } instead of throwing, so the page can say what is missing.
   async okrDashboard() {
@@ -1217,20 +1222,32 @@ function okrCards(d) {
   return [
     { id: 'profile', title: 'Complete profiles', target: '100% of players', unit: '%', value: pct(d.profiles.complete, n), goal: 100,
       formula: `${d.profiles.complete} of ${plural(n, 'player')} have a name, age and photo`, source: 'profile, profile_private, photo' },
-    { id: 'games', title: 'Games played', target: '1 per player per week', unit: '', value: per(d.games.played_7d, n), goal: 1,
-      formula: `${plural(d.games.played_7d, 'game')} played in the last 7 days by ${plural(n, 'player')}`, source: 'event, event_attendee' },
+    { id: 'games', title: 'Players who played', target: '100% of players, every week', unit: '%', value: pct(d.games.players_played_7d, d.games.players_total), goal: 100,
+      formula: `${d.games.players_played_7d} of ${plural(d.games.players_total, 'player')} played a game in the last 7 days`, source: 'event, event_attendee' },
     { id: 'matches', title: 'New matches', target: '2 per player per week', unit: '', value: per(d.matches.made_7d * 2, n), goal: 2,
       formula: `${plural(d.matches.made_7d, 'match', 'matches')} made in the last 7 days (each counts for both players)`, source: 'choice' },
     { id: 'messaged', title: 'Matches that talk', target: '100% of matches', unit: '%', value: pct(d.messaged.pairs_with_message, d.matches.pairs_total), goal: 100,
       formula: `${d.messaged.pairs_with_message} of ${plural(d.matches.pairs_total, 'matched pair')} have a message`, source: 'choice, messages' },
   ];
 }
+// Players by age band (Rally Provo is 18+). Counts only; the database function is
+// admin-only. If it is missing or refuses, this section is simply left out.
+function ageCard(res) {
+  const a = res && res.data;
+  if (!a || !Array.isArray(a.bands)) return '';
+  const total = a.players || 0, max = Math.max(1, ...a.bands.map(b => b.players));
+  return `<article class="card block" aria-labelledby="age-title">
+    <p class="eyebrow" style="margin-bottom:4px">Who is playing</p><h3 id="age-title">Players by age</h3>
+    <div style="margin-top:8px">${a.bands.map(b => `<div class="age-row"><div class="between"><strong>${esc(b.band)}</strong><span class="muted small tnum">${plural(b.players, 'player')}</span></div><div class="meter admin-meter" role="img" aria-label="${esc(b.band)}: ${plural(b.players, 'player')}"><i style="width:${Math.round(b.players / max * 100)}%"></i></div></div>`).join('')}</div>
+    <small class="admin-note muted">${a.no_birthday ? `${plural(a.no_birthday, 'player')} of ${total} ${a.no_birthday === 1 ? 'has' : 'have'} not added a birthday yet. ` : ''}Source: profile_private (counts only).</small>
+  </article>`;
+}
 V.admin = async () => {
   // render() swaps the whole view, which would drop keyboard focus from the Refresh
   // button every 30 seconds. Remember it and put it back.
   const hadFocus = view('admin').contains(document.activeElement);
   const keepFocus = () => { if (hadFocus) { const b = $('#v-admin [data-action="admin-refresh"]'); if (b) b.focus(); } };
-  const { data: d, error } = await api.okrDashboard();
+  const [{ data: d, error }, ages] = await Promise.all([api.okrDashboard(), api.ageBands()]);
   const head = `<header class="page-head"><div><p class="eyebrow">Team only</p><h1>Admin page</h1>
     <p class="sub">Live numbers for our four Key Results. They are counts from the database, not saved figures.</p></div>
     <button class="btn ghost" data-action="admin-refresh">Refresh</button></header>`;
@@ -1250,6 +1267,7 @@ V.admin = async () => {
         <small class="admin-note">${esc(c.value === null ? 'Nothing to measure yet.' : c.formula)}</small>
         <small class="admin-note muted">Source: ${esc(c.source)}</small></article>`;
     }).join('')}</div>
+    ${ageCard(ages)}
     <p class="muted small block" role="status">Updated ${when}. Refreshes every 30 seconds while this page is open. Weekly figures use the last 7 days.</p>`;
   keepFocus();
   clearTimeout(ui.adminTimer);

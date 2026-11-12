@@ -485,3 +485,4 @@ img.avatar{padding:0}
 .admin-tiles .tile{display:flex;flex-direction:column;gap:6px}
 .admin-meter{grid-column:auto;height:8px;margin-top:4px}
 .admin-note{font-weight:500;line-height:1.35}
+.age-row{margin-top:12px}.age-row .meter{grid-column:auto;margin-top:6px}

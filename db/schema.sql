@@ -262,10 +262,12 @@ begin
       where btrim(coalesce(p.name, '')) <> ''
         and pp.birthday is not null
         and exists (select 1 from public.photo ph
-                    where ph.user_id = p.profile_id and ph.photo_file is not null)
+                    where ph.user_id = p.profile_id
+                      and btrim(coalesce(ph.photo_file, '')) <> '')
     ),
     played as (
-      select count(*)::int as n
+      -- Distinct players who played in the last 7 days (migration 017).
+      select count(distinct ea.profile_id)::int as n
       from public.event_attendee ea
       join public.event e on e.event_id = ea.event_id
       join players p on p.profile_id = ea.profile_id
@@ -300,7 +302,8 @@ begin
       'generated_at', now(),
       'players',      (select count(*)::int from players),
       'profiles',     jsonb_build_object('complete', (select n from complete)),
-      'games',        jsonb_build_object('played_7d', (select n from played)),
+      'games',        jsonb_build_object('players_played_7d', (select n from played),
+                                         'players_total',     (select count(*)::int from players)),
       'matches',      jsonb_build_object('made_7d', (select n from recent),
                                          'pairs_total', (select count(*)::int from pairs)),
       'messaged',     jsonb_build_object('pairs_with_message', (select n from talked))
