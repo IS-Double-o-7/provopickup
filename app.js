@@ -1271,6 +1271,10 @@ function okrCards(d) {
   ];
 }
 V.admin = async () => {
+  // render() swaps the whole view, which would drop keyboard focus from the Refresh
+  // button every 30 seconds. Remember it and put it back.
+  const hadFocus = view('admin').contains(document.activeElement);
+  const keepFocus = () => { if (hadFocus) { const b = $('#v-admin [data-action="admin-refresh"]'); if (b) b.focus(); } };
   const { data: d, error } = await api.okrDashboard();
   const head = `<header class="page-head"><div><p class="eyebrow">Team only</p><h1>Admin page</h1>
     <p class="sub">Live numbers for our four Key Results. They are counts from the database, not saved figures.</p></div>
@@ -1278,6 +1282,7 @@ V.admin = async () => {
   if (error || !d) {
     console.error(error);
     view('admin').innerHTML = head + `<div class="card empty"><h3>Numbers are not available</h3><p class="muted">This page needs the latest database update, or you are offline. Nothing else is affected.</p></div>`;
+    keepFocus();
     return;
   }
   const when = new Date(d.generated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -1291,6 +1296,7 @@ V.admin = async () => {
         <small class="admin-note muted">Source: ${esc(c.source)}</small></article>`;
     }).join('')}</div>
     <p class="muted small block" role="status">Updated ${when}. Refreshes every 30 seconds while this page is open. Weekly figures use the last 7 days.</p>`;
+  keepFocus();
   clearTimeout(ui.adminTimer);
   ui.adminTimer = setTimeout(() => { if (ui.route === 'admin') render(); }, 30000);
 };
@@ -1660,8 +1666,11 @@ let started = false;
 function startApp() {
   if (started) return; started = true;
   buildNav();
-  go((location.hash || '').slice(1) || 'home');
-  api.checkAdmin().then(ok => { if (!ok) return; ui.isAdmin = true; buildNav(); $$('.nav-link[data-route]').forEach(b => b.classList.toggle('active', b.dataset.route === ui.route)); });
+  // An admin who reloads on #admin must land back on it. The admin check is async, so
+  // remember where they wanted to go and take them there once it says yes.
+  const wanted = (location.hash || '').slice(1) || 'home';
+  go(wanted);
+  api.checkAdmin().then(ok => { if (!ok) return; ui.isAdmin = true; buildNav(); if (wanted === 'admin') { go('admin'); return; } $$('.nav-link[data-route]').forEach(b => b.classList.toggle('active', b.dataset.route === ui.route)); });
   Promise.all([api.syncGames(), api.syncPlaces(), api.syncConversations()]).then(results => {
     render();
     if (results.some(r => r.error)) toast('Could not reach the database. Showing what is cached.');
