@@ -189,8 +189,18 @@ function profileFromRows(row, interests = [], avail = [], photos = []) {
   const sports = Object.fromEntries((interests || []).map(x => [x.interest_id, x.skill_level]).filter(([id, level]) => id && level));
   return {
     id: row.profile_id, ownerId: row.auth_uid || null, name: row.name || '', bio: row.bio || '',
-    sports, avail, photo: photos[0]?.photo_file || '',
+    sports, avail, photo: photos[0]?.photo_file || '', birthday: row.birthday || '',
   };
+}
+/* Players must be 18 or older (Product Owner decision, #7). Dates are compared as local YYYY-MM-DD. */
+const MIN_AGE = 18;
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const latestAdultBirthday = () => { const t = new Date(); return isoLocal(new Date(t.getFullYear() - MIN_AGE, t.getMonth(), t.getDate())); };
+function birthdayProblem(v) {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'Add your birthday.';
+  if (v < '1900-01-01') return 'Check the year of your birthday.';
+  if (v > latestAdultBirthday()) return `Rally Provo is for players ${MIN_AGE} and older.`;
+  return '';
 }
 function hasLiveAccount() {
   const user = window.RallyAuth && window.RallyAuth.user();
@@ -253,11 +263,15 @@ async function loadProfileFor(user) {
     .select('profile_id,name,bio').eq('profile_id', profileId).maybeSingle();
   if (rowError) throw authError('Could not load your profile.', rowError);
   if (!row) return null;
-  const [interestsResult, availabilityResult, photosResult] = await Promise.all([
+  const [interestsResult, availabilityResult, photosResult, privateResult] = await Promise.all([
     db.from('profile_interest').select('interest_id,skill_level').eq('user_id', row.profile_id),
     db.from('profile_availability').select('slot').eq('profile_id', row.profile_id),
     db.from('photo').select('photo_file,display_order_id').eq('user_id', row.profile_id).order('display_order_id', { ascending: true }),
+    db.from('profile_private').select('birthday').eq('profile_id', row.profile_id).maybeSingle(),
   ]);
+  // Birthday is private (only the player can read it). If it can't be read, the form just asks for it.
+  if (privateResult.error) console.error('Could not load birthday', privateResult.error);
+  row.birthday = privateResult.data?.birthday || '';
   const { data: interests, error: interestsError } = interestsResult;
   const { data: availability, error: availabilityError } = availabilityResult;
   const { data: photos, error: photosError } = photosResult;
@@ -361,6 +375,8 @@ const api = {
     if (!p.photo) throw authError('Choose a profile photo before saving.');
     const wanted = Object.entries(p.sports || {}).filter(([id, level]) => SPORTS.some(s => s.id === id) && LEVELS.includes(level));
     if (!wanted.length) throw authError('Choose at least one sport and skill level.');
+    const bdayProblem = birthdayProblem(p.birthday);
+    if (bdayProblem) throw authError(bdayProblem);
     const wantedSlots = [...new Set((p.avail || []).filter(slot => Object.hasOwn(SLOTS, slot)))];
     if (!wantedSlots.length) throw authError('Choose at least one time you are usually free.');
     const { data: existingProfileId, error: profileReadError } = await db.rpc('current_profile_id');
@@ -376,6 +392,9 @@ const api = {
       const { error } = await db.from('profile').update(profileFields).eq('profile_id', profileId);
       if (error) throw authError('Could not save your name and bio.', error);
     }
+
+    const { error: birthdayError } = await db.from('profile_private').upsert({ profile_id: profileId, birthday: p.birthday }, { onConflict: 'profile_id' });
+    if (birthdayError) throw authError('Your name was saved, but your birthday could not be saved.', birthdayError);
 
     const { data: current, error: currentError } = await db.from('profile_interest').select('interest_id').eq('user_id', profileId);
     if (currentError) throw authError('Could not update your sports and skill levels.', currentError);
@@ -1305,6 +1324,7 @@ function photoField(pre, photo, required) {
     </div></div>`;
 }
 const sportLevelFields = (pre, sports) => `<div class="field"><span class="lbl">Sports you play and your level</span><div class="sport-levels">${SPORTS.map(s => `<div class="field"><label for="${pre}-sp-${s.id}" style="font-weight:600">${s.icon} ${s.name}</label><select id="${pre}-sp-${s.id}"><option value="">Not playing</option>${LEVELS.map(l => `<option ${sports[s.id] === l ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div></div>`;
+const birthdayField = (pre, birthday) => `<div class="field"><label for="${pre}-bday">Birthday</label><input type="date" id="${pre}-bday" required autocomplete="bday" min="1900-01-01" max="${latestAdultBirthday()}" value="${esc(birthday || '')}" aria-describedby="${pre}-bday-hint"><small class="muted" id="${pre}-bday-hint">You must be ${MIN_AGE} or older to play. Only you can see your birthday.</small></div>`;
 const bioField = (pre, bio) => `<div class="field"><label for="${pre}-bio">Bio <span class="muted" style="font-weight:500">(optional)</span></label><textarea id="${pre}-bio" maxlength="${BIO_MAX}" placeholder="What you like to play, how competitive you are, anything players should know.">${esc(bio || '')}</textarea></div>`;
 const availFields = (pre, avail) => `<fieldset class="field bare"><legend class="lbl">When you’re usually free</legend>
   <p class="muted small" id="${pre}-av-hint">Pick every time that usually works. You can change this later.</p>
@@ -1352,6 +1372,7 @@ function showOnboarding(user) {
     <form class="form card onboard-form" id="onboardForm" novalidate>
       ${photoField('o', pendingPhoto.o, true)}
       <div class="field"><label for="o-name">First name</label><input id="o-name" maxlength="40" required autocomplete="given-name" value="${esc(mine ? p.name : '')}" placeholder="What should players call you?"></div>
+      ${birthdayField('o', mine ? p.birthday : '')}
       ${sportLevelFields('o', mine ? p.sports : {})}
       ${bioField('o', mine ? p.bio : '')}
       ${availFields('o', mine ? p.avail : [])}
@@ -1373,9 +1394,10 @@ async function openProfile() {
   catch (error) { return toast(error.message || 'Could not load your profile. Please try again.'); }
   ui.resetArmed = false; pendingPhoto.p = p.photo || '';
   openModal(`${modalHead('Your profile', 'How you play', 'Matches and suggestions use your sports, levels and free times.')}
-    <form class="form" id="profileForm">
+    <form class="form" id="profileForm" novalidate>
       ${photoField('p', p.photo || '', false)}
       <div class="field"><label for="p-name">First name</label><input id="p-name" maxlength="40" value="${esc(p.name)}" placeholder="What should players call you?" autocomplete="given-name"></div>
+      ${birthdayField('p', p.birthday)}
       ${sportLevelFields('p', p.sports)}
       ${bioField('p', p.bio)}
       ${availFields('p', p.avail)}
@@ -1546,12 +1568,14 @@ document.addEventListener('submit', async e => {
     const name = $(`#${pre}-name`).value.trim(), sports = readSports(pre), avail = readAvail(f), bio = $(`#${pre}-bio`).value.trim();
     if (setup && !pendingPhoto.o) return fail('Add a profile photo so players know who they’re meeting.', $('[data-pick-photo="o"]'));
     if (setup && !name) return fail('Add your first name.', $('#o-name'));
+    const birthday = $(`#${pre}-bday`).value, bdayProblem = birthdayProblem(birthday);
+    if (bdayProblem) return fail(bdayProblem, $(`#${pre}-bday`));
     if (!Object.keys(sports).length) return fail('Pick at least one sport and your level in it.', $(`#${pre}-sp-${SPORTS[0].id}`));
     if (!avail.length) return fail('Pick at least one time you’re usually free.', $('.week-c input', f));
     const btn = $('button[type="submit"]', f); btn.disabled = true;
     try {
       const user = window.RallyAuth && window.RallyAuth.user();
-      await api.saveProfile({ ...S().profile, name, photo: pendingPhoto[pre] || '', bio, sports, avail, ownerId: setup && user ? user.id : S().profile.ownerId });
+      await api.saveProfile({ ...S().profile, name, birthday, photo: pendingPhoto[pre] || '', bio, sports, avail, ownerId: setup && user ? user.id : S().profile.ownerId });
     } catch (err) { btn.disabled = false; return fail('Your profile could not be saved. ' + (err.message || 'Try again.')); }
     if (setup) { finishOnboarding(); toast('Profile created. Welcome to Rally Provo!'); }
     else { closeModal(); renderMe(); render(); toast('Profile saved. Your matches are updated.'); }
@@ -1639,6 +1663,8 @@ async function boot(user) {
   if (needsProfile(user)) return showOnboarding(user);
   startApp();
   if (!isComplete(S().profile)) toast('Your profile is missing a few details.', { label: 'Finish profile', run: () => openProfile() });
+  // Accounts made before the 18+ rule have no birthday yet; ask once per visit.
+  else if (!S().profile.birthday) toast('Add your birthday to your profile. Rally Provo is for players 18 and older.', { label: 'Add birthday', run: () => openProfile() });
 }
 if (window.RallyAuth) window.RallyAuth.whenSignedIn(boot); else startApp();
 })();
