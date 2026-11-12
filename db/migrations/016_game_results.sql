@@ -1,4 +1,4 @@
--- 015: let players record a score and a short report on a game after it is played.
+-- 016: let players record a score and a short report on a game after it is played.
 --
 -- Product Owner decision (Brook, 2026-11-10): new games can only be scheduled for
 -- the future (PR #55), but once a game has happened, players add its result.
