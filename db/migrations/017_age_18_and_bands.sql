@@ -1,4 +1,10 @@
--- 016: Rally Provo is 18+, and age bands for the Admin page.
+-- 017: Rally Provo is 18+, and age bands for the Admin page.
+--
+-- Numbered 017, not 016. This was written as 016 at the same time brook-codex
+-- renumbered the game-results migration from 015 to 016 (PR #60) to get clear of
+-- my 015. Two 016s existed for about an hour. Brook's reached main first, so this
+-- one moved. The live project recorded it under the name `age_18_and_bands`, so
+-- the rename is to the file only -- nothing needs re-running.
 --
 -- Brook's decision as Product Owner (issue #7, 2026-11-12): the app matches
 -- strangers for meetups, so players must be 18 or older. Bands are 18-24,
