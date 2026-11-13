@@ -136,7 +136,7 @@ create table event (
   event_time      time not null,
   note            text,
   new_people_met  integer not null default 0,
-  score           text constraint event_score_length check (score is null or char_length(score) <= 40),  -- added in 015
+  score           text constraint event_score_length check (score is null or char_length(score) <= 40),  -- added in 016
   created_at      timestamptz not null default now()
 );
 
@@ -317,7 +317,7 @@ create policy "book event" on event for insert to authenticated
 
 create policy "cancel event" on event for delete to authenticated
   using (true);
--- 015: after a game is played, players can record its result (score, people met, note only).
+-- 016: after a game is played, players can record its result (score, people met, note only).
 create policy "report played event" on event for update to authenticated
   using (event_date <= current_date) with check (event_date <= current_date);
 revoke update on event from authenticated;

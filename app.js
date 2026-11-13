@@ -53,22 +53,18 @@ const ICON = (() => {
     messages: s('<path d="M4 5h16v11H9.5L5 20v-4H4z"/>'),
     courts: s('<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>'),
     calendar: s('<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
-    reels: s('<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="m10 8.5 5.5 3.5-5.5 3.5z"/>'),
     challenge: s('<path d="M13 2 4.5 13.5H11L10 22l9-12h-6.5z"/>'),
     stats: s('<path d="M5 20v-8M12 20V4M19 20v-5"/>'),
     more: s('<circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/>'),
     plus: s('<path d="M12 5v14M5 12h14"/>'),
     x: s('<path d="M6 6l12 12M18 6 6 18"/>'),
     heart: s('<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/>'),
-    comment: s('<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4A8 8 0 1 1 20 12z"/>'),
-    bookmark: s('<path d="M6 3.5h12V21l-6-4-6 4z"/>'),
     share: s('<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8M5 13v7h14v-7"/>'),
     back: s('<path d="M15 5l-7 7 7 7"/>'),
     left: s('<path d="M15 5l-7 7 7 7"/>'),
     right: s('<path d="M9 5l7 7-7 7"/>'),
     send: s('<path d="M4 12 20 4l-6 16-3-7z"/>'),
     check: s('<path d="M5 12.5 10 17l9-10"/>'),
-    flag: s('<path d="M5 21V4h11l-2 4 2 4H5"/>'),
     medal: s('<circle cx="12" cy="14" r="6"/><path d="M8.5 3h7L14 9h-4z"/>'),
     spark: s('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>'),
     clock: s('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
@@ -132,16 +128,6 @@ const CHALLENGES = [
 ];
 const challengeFor = d => CHALLENGES[dayNum(d) % CHALLENGES.length];
 
-const REELS = [
-  { id: 'r1', sport: 'pickleball', cat: 'Tips', title: '3 ways to find your soft game', caption: 'A softer touch makes a big difference at the kitchen line.', creator: '@maddieplays', likes: 248, comments: 18, ago: 1 },
-  { id: 'r2', sport: 'pickleball', cat: 'Pickup games', title: 'A perfect evening at Kiwanis', caption: 'The kind of night that makes you want to come back tomorrow.', creator: '@provo.pickle', likes: 193, comments: 11, ago: 2 },
-  { id: 'r3', sport: 'basketball', cat: 'Beginner friendly', title: 'Beginner hoops: come as you are', caption: 'Beginner-friendly runs every Thursday at the Rec.', creator: '@hoopswithj', likes: 89, comments: 9, ago: 2 },
-  { id: 'r4', sport: 'volleyball', cat: 'Community', title: 'Your reminder to try something new', caption: 'Try something new with people who make it easy.', creator: '@taylormoves', likes: 321, comments: 24, ago: 3 },
-  { id: 'r5', sport: 'soccer', cat: 'Pickup games', title: 'Sunday pickup at North Park', caption: 'All levels, pinnies provided, we play until sunset.', creator: '@diego.plays', likes: 156, comments: 14, ago: 4 },
-  { id: 'r6', sport: 'tennis', cat: 'Tips', title: 'Fix your toss in one session', caption: 'Consistent toss, consistent serve. Three drills to try.', creator: '@priyaserves', likes: 74, comments: 6, ago: 5 },
-  { id: 'r7', sport: 'spikeball', cat: 'Highlights', title: 'That rally went on forever', caption: 'Memorial Park, Saturday morning, zero chill.', creator: '@roundnet.provo', likes: 211, comments: 19, ago: 6 },
-  { id: 'r8', sport: 'badminton', cat: 'Tips', title: 'Footwork that saves your shuttle', caption: 'Split step first, then go.', creator: '@hannahk', likes: 58, comments: 3, ago: 8 },
-];
 
 /* =====================================================================
    3. Store + API
@@ -164,8 +150,7 @@ function seed() {
     conversations: [],
     games: [],
     challenges: { done, swaps: {} },
-    reels: { liked: [], saved: [], following: ['@provo.pickle'], hidden: [], posts: [], comments: {} },
-    ui: { playSport: 'all', placeSport: 'all', reelSport: 'all', reelTab: 'for-you', statsRange: 'week' },
+    ui: { playSport: 'all', placeSport: 'all', statsRange: 'week' },
   };
 }
 
@@ -189,8 +174,18 @@ function profileFromRows(row, interests = [], avail = [], photos = []) {
   const sports = Object.fromEntries((interests || []).map(x => [x.interest_id, x.skill_level]).filter(([id, level]) => id && level));
   return {
     id: row.profile_id, ownerId: row.auth_uid || null, name: row.name || '', bio: row.bio || '',
-    sports, avail, photo: photos[0]?.photo_file || '',
+    sports, avail, photo: photos[0]?.photo_file || '', birthday: row.birthday || '',
   };
+}
+/* Players must be 18 or older (Product Owner decision, #7). Dates are compared as local YYYY-MM-DD. */
+const MIN_AGE = 18;
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const latestAdultBirthday = () => { const t = new Date(); return isoLocal(new Date(t.getFullYear() - MIN_AGE, t.getMonth(), t.getDate())); };
+function birthdayProblem(v) {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'Add your birthday.';
+  if (v < '1900-01-01') return 'Check the year of your birthday.';
+  if (v > latestAdultBirthday()) return `Rally Provo is for players ${MIN_AGE} and older.`;
+  return '';
 }
 function hasLiveAccount() {
   const user = window.RallyAuth && window.RallyAuth.user();
@@ -253,11 +248,15 @@ async function loadProfileFor(user) {
     .select('profile_id,name,bio').eq('profile_id', profileId).maybeSingle();
   if (rowError) throw authError('Could not load your profile.', rowError);
   if (!row) return null;
-  const [interestsResult, availabilityResult, photosResult] = await Promise.all([
+  const [interestsResult, availabilityResult, photosResult, privateResult] = await Promise.all([
     db.from('profile_interest').select('interest_id,skill_level').eq('user_id', row.profile_id),
     db.from('profile_availability').select('slot').eq('profile_id', row.profile_id),
     db.from('photo').select('photo_file,display_order_id').eq('user_id', row.profile_id).order('display_order_id', { ascending: true }),
+    db.from('profile_private').select('birthday').eq('profile_id', row.profile_id).maybeSingle(),
   ]);
+  // Birthday is private (only the player can read it). If it can't be read, the form just asks for it.
+  if (privateResult.error) console.error('Could not load birthday', privateResult.error);
+  row.birthday = privateResult.data?.birthday || '';
   const { data: interests, error: interestsError } = interestsResult;
   const { data: availability, error: availabilityError } = availabilityResult;
   const { data: photos, error: photosError } = photosResult;
@@ -298,7 +297,6 @@ const rowToGame = r => ({
 // A game is over once its start time has passed (browser local time). Only then can a result be added.
 const gameOver = g => { const t = todayISO(); if (g.date !== t) return g.date < t; const d = new Date(); return g.time <= `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const lastMsg = c => c.messages[c.messages.length - 1] || { from: 'them', text: 'New match. Say hello!', at: Date.now() };
-const myHandle = () => '@' + ((S().profile.name || 'you').toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '') || 'you');
 
 function compat(p, me) {
   let score = 40, best = null;
@@ -361,6 +359,8 @@ const api = {
     if (!p.photo) throw authError('Choose a profile photo before saving.');
     const wanted = Object.entries(p.sports || {}).filter(([id, level]) => SPORTS.some(s => s.id === id) && LEVELS.includes(level));
     if (!wanted.length) throw authError('Choose at least one sport and skill level.');
+    const bdayProblem = birthdayProblem(p.birthday);
+    if (bdayProblem) throw authError(bdayProblem);
     const wantedSlots = [...new Set((p.avail || []).filter(slot => Object.hasOwn(SLOTS, slot)))];
     if (!wantedSlots.length) throw authError('Choose at least one time you are usually free.');
     const { data: existingProfileId, error: profileReadError } = await db.rpc('current_profile_id');
@@ -376,6 +376,9 @@ const api = {
       const { error } = await db.from('profile').update(profileFields).eq('profile_id', profileId);
       if (error) throw authError('Could not save your name and bio.', error);
     }
+
+    const { error: birthdayError } = await db.from('profile_private').upsert({ profile_id: profileId, birthday: p.birthday }, { onConflict: 'profile_id' });
+    if (birthdayError) throw authError('Your name was saved, but your birthday could not be saved.', birthdayError);
 
     const { data: current, error: currentError } = await db.from('profile_interest').select('interest_id').eq('user_id', profileId);
     if (currentError) throw authError('Could not update your sports and skill levels.', currentError);
@@ -623,7 +626,7 @@ const api = {
   async syncGames() {
     const cols = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)';
     let { data, error } = await db.from('event').select(cols + ', score');
-    // Before migration 015 is applied there is no score column; load games without it.
+    // Before migration 016 is applied there is no score column; load games without it.
     if (error && (error.code === '42703' || /score/.test(error.message || ''))) ({ data, error } = await db.from('event').select(cols));
     if (error) { console.error('Could not load games', error); return { error }; }
     S().games = data.map(rowToGame); store.save(); return { error: null };
@@ -683,22 +686,6 @@ const api = {
     g.id = data.event_id; S().games.push(g); store.save();
   },
 
-  async reels({ sportId = 'all', tab = 'for-you' } = {}) {
-    const r = S().reels, me = myHandle();
-    const all = [...r.posts.map(p => ({ ...p, creator: me, mine: true })), ...REELS];
-    return all.filter(x => !r.hidden.includes(x.id))
-      .filter(x => sportId === 'all' || x.sport === sportId)
-      .filter(x => tab === 'for-you' || (tab === 'saved' ? r.saved.includes(x.id) : (x.mine || r.following.includes(x.creator))))
-      .map(x => ({ ...x,
-        liked: r.liked.includes(x.id), saved: r.saved.includes(x.id), following: r.following.includes(x.creator),
-        likeCount: x.likes + (r.liked.includes(x.id) ? 1 : 0),
-        commentCount: x.comments + (r.comments[x.id] || []).length }));
-  },
-  async toggleReel(kind, id) { const list = S().reels[kind], i = list.indexOf(id); if (i >= 0) list.splice(i, 1); else list.push(id); store.save(); return i < 0; },
-  async hideReel(id, hide = true) { const h = S().reels.hidden; if (hide) h.push(id); else h.splice(h.indexOf(id), 1); store.save(); },
-  async postReel(data) { const p = { id: 'p' + Date.now(), likes: 0, comments: 0, ago: 0, ...data }; S().reels.posts.unshift(p); store.save(); return p; },
-  async comments(id) { return S().reels.comments[id] || []; },
-  async addComment(id, text) { const c = S().reels.comments; (c[id] = c[id] || []).push({ text, at: Date.now(), by: myHandle() }); store.save(); },
 
   async challenge() {
     const s = S(), ws = startOfWeek(today0()), set = activeDaySet(), tk = todayISO();
@@ -800,9 +787,9 @@ const brandSVG = `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy
    ===================================================================== */
 const ROUTES = [
   ['home', 'Home', ICON.home], ['play', 'Play', ICON.play], ['messages', 'Messages', ICON.messages], ['courts', 'Courts', ICON.courts],
-  ['calendar', 'Calendar', ICON.calendar], ['reels', 'Reels', ICON.reels], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats],
+  ['calendar', 'Calendar', ICON.calendar], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats],
 ];
-const MORE = ['courts', 'reels', 'challenge', 'stats'];
+const MORE = ['courts', 'challenge', 'stats'];
 const ui = { route: 'home', conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, focus: null, swiping: false, typing: {}, resetArmed: false };
 const view = r => $('#v-' + r);
 const isWide = () => window.matchMedia('(min-width: 821px)').matches;
@@ -1132,38 +1119,6 @@ function gameRow(g) {
     <button class="icon-btn sm" data-action="del-game" data-id="${g.id}" aria-label="Remove this game">${ICON.x}</button></div>`;
 }
 
-/* ---- Reels ---- */
-V.reels = async () => {
-  const u = S().ui, list = await api.reels({ sportId: u.reelSport, tab: u.reelTab });
-  const emptyMsg = { 'for-you': ['No reels for this sport yet', 'Be the first to post one.'], following: ['Nothing from people you follow', 'Follow creators from the For you tab to see them here.'], saved: ['No saved reels', 'Tap Save on any reel to keep it here.'] }[u.reelTab];
-  view('reels').innerHTML = `
-    <header class="page-head"><div><p class="eyebrow">Local sports feed</p><h1>Reels</h1>
-      <p class="sub">Tips, pickup games and good energy from around Provo.</p></div>
-      <button class="btn" data-action="post-reel">${ICON.plus} Post a reel</button></header>
-    <div class="reel-controls">
-      ${sportChips('reel-filter', u.reelSport, ['pickleball', 'basketball', 'volleyball', 'soccer', 'tennis', 'spikeball', 'badminton'])}
-      <div class="tabs" role="group">${[['for-you', 'For you'], ['following', 'Following'], ['saved', 'Saved']].map(([id, l]) => `<button class="${u.reelTab === id ? 'active' : ''}" data-action="reel-tab" data-id="${id}" aria-pressed="${u.reelTab === id}">${l}</button>`).join('')}</div>
-    </div>
-    ${list.length ? `<div class="reel-grid">${list.map(reelCard).join('')}</div>` : `<div class="card empty block"><h3>${emptyMsg[0]}</h3><p class="muted">${emptyMsg[1]}</p></div>`}
-    <p class="note">${ICON.flag.replace('<svg', '<svg width="16" height="16"')} Keep it local, kind and sports-first. Use the menu on any reel to report it.</p>`;
-};
-function reelCard(r) {
-  return `<article class="reel">
-    <div class="reel-media"><div class="art">${courtSVG(r.sport)}</div><div class="shade"></div>
-      <span class="glyph" aria-hidden="true">${sport(r.sport).icon}</span>
-      <span class="pill reel-type">${esc(r.cat)}</span>
-      ${r.mine ? '' : `<button class="reel-menu" data-action="reel-report" data-id="${r.id}" aria-label="Report this reel">${ICON.more}</button>`}
-      <div class="reel-cap"><strong>${esc(r.title)}</strong><span>${esc(r.caption)}</span></div></div>
-    <div class="reel-meta">${avatar(r.creator, 34)}<div class="min0"><b>${esc(r.creator)}</b><small class="muted">${esc(sport(r.sport).name)} · ${r.ago ? r.ago + 'd ago' : 'Just now'}</small></div>
-      ${r.mine ? '<span class="pill" style="margin-left:auto">Yours</span>' : `<button class="follow ${r.following ? 'on' : ''}" data-action="reel-follow" data-id="${esc(r.creator)}" aria-pressed="${r.following}">${r.following ? 'Following' : 'Follow'}</button>`}</div>
-    <div class="reel-actions">
-      <button class="${r.liked ? 'liked' : ''}" data-action="reel-like" data-id="${r.id}" aria-pressed="${r.liked}" aria-label="Like, ${r.likeCount} likes">${ICON.heart}<span class="tnum">${r.likeCount}</span></button>
-      <button data-action="reel-comments" data-id="${r.id}" aria-label="Comments, ${r.commentCount}">${ICON.comment}<span class="tnum">${r.commentCount}</span></button>
-      <button class="${r.saved ? 'saved' : ''}" data-action="reel-save" data-id="${r.id}" aria-pressed="${r.saved}">${ICON.bookmark}<span>${r.saved ? 'Saved' : 'Save'}</span></button>
-      <button data-action="reel-share" data-id="${r.id}">${ICON.share}<span>Share</span></button>
-    </div></article>`;
-}
-
 /* ---- Challenge ---- */
 V.challenge = async () => {
   const c = await api.challenge(), t = c.today;
@@ -1305,6 +1260,7 @@ function photoField(pre, photo, required) {
     </div></div>`;
 }
 const sportLevelFields = (pre, sports) => `<div class="field"><span class="lbl">Sports you play and your level</span><div class="sport-levels">${SPORTS.map(s => `<div class="field"><label for="${pre}-sp-${s.id}" style="font-weight:600">${s.icon} ${s.name}</label><select id="${pre}-sp-${s.id}"><option value="">Not playing</option>${LEVELS.map(l => `<option ${sports[s.id] === l ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div></div>`;
+const birthdayField = (pre, birthday) => `<div class="field"><label for="${pre}-bday">Birthday</label><input type="date" id="${pre}-bday" required autocomplete="bday" min="1900-01-01" max="${latestAdultBirthday()}" value="${esc(birthday || '')}" aria-describedby="${pre}-bday-hint"><small class="muted" id="${pre}-bday-hint">You must be ${MIN_AGE} or older to play. Only you can see your birthday.</small></div>`;
 const bioField = (pre, bio) => `<div class="field"><label for="${pre}-bio">Bio <span class="muted" style="font-weight:500">(optional)</span></label><textarea id="${pre}-bio" maxlength="${BIO_MAX}" placeholder="What you like to play, how competitive you are, anything players should know.">${esc(bio || '')}</textarea></div>`;
 const availFields = (pre, avail) => `<fieldset class="field bare"><legend class="lbl">When you’re usually free</legend>
   <p class="muted small" id="${pre}-av-hint">Pick every time that usually works. You can change this later.</p>
@@ -1352,6 +1308,7 @@ function showOnboarding(user) {
     <form class="form card onboard-form" id="onboardForm" novalidate>
       ${photoField('o', pendingPhoto.o, true)}
       <div class="field"><label for="o-name">First name</label><input id="o-name" maxlength="40" required autocomplete="given-name" value="${esc(mine ? p.name : '')}" placeholder="What should players call you?"></div>
+      ${birthdayField('o', mine ? p.birthday : '')}
       ${sportLevelFields('o', mine ? p.sports : {})}
       ${bioField('o', mine ? p.bio : '')}
       ${availFields('o', mine ? p.avail : [])}
@@ -1373,9 +1330,10 @@ async function openProfile() {
   catch (error) { return toast(error.message || 'Could not load your profile. Please try again.'); }
   ui.resetArmed = false; pendingPhoto.p = p.photo || '';
   openModal(`${modalHead('Your profile', 'How you play', 'Matches and suggestions use your sports, levels and free times.')}
-    <form class="form" id="profileForm">
+    <form class="form" id="profileForm" novalidate>
       ${photoField('p', p.photo || '', false)}
       <div class="field"><label for="p-name">First name</label><input id="p-name" maxlength="40" value="${esc(p.name)}" placeholder="What should players call you?" autocomplete="given-name"></div>
+      ${birthdayField('p', p.birthday)}
       ${sportLevelFields('p', p.sports)}
       ${bioField('p', p.bio)}
       ${availFields('p', p.avail)}
@@ -1394,25 +1352,6 @@ async function openProfile() {
         </div>
       </div>` : ''}
     </form>`);
-}
-function openComposer() {
-  const me = S().profile;
-  openModal(`${modalHead('New reel', 'Post a reel', 'Video uploads arrive with the real backend. For now each post gets a court cover for its sport.')}
-    <form class="form" id="reelForm">
-      <div class="field"><label for="r-title">Title</label><input id="r-title" maxlength="60" required placeholder="Sunset doubles at Kiwanis"></div>
-      <div class="form-grid">
-        <div class="field"><label for="r-sport">Sport</label><select id="r-sport">${SPORTS.map(s => `<option value="${s.id}" ${me.sports[s.id] && Object.keys(me.sports)[0] === s.id ? 'selected' : ''}>${s.icon} ${s.name}</option>`).join('')}</select></div>
-        <div class="field"><label for="r-cat">Type</label><select id="r-cat">${['Tips', 'Pickup games', 'Highlights', 'Beginner friendly', 'Community'].map(c => `<option>${c}</option>`).join('')}</select></div>
-      </div>
-      <div class="field"><label for="r-caption">Caption</label><textarea id="r-caption" maxlength="140" placeholder="What should people know?"></textarea></div>
-      <div class="row"><button class="btn" type="submit">Post</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
-    </form>`);
-}
-async function openComments(id) {
-  const all = await api.reels({}), r = all.find(x => x.id === id) || REELS.find(x => x.id === id), list = await api.comments(id);
-  openModal(`${modalHead('Comments', esc(r.title))}
-    <div>${list.length ? list.map(c => `<div class="comment"><div class="row">${avatar(c.by, 28)}<strong class="small">${esc(c.by)}</strong><span class="muted small">${relTime(c.at)}</span></div><p style="margin-top:6px">${esc(c.text)}</p></div>`).join('') : `<p class="muted">${r.comments ? `${plural(r.comments, 'earlier comment')} from the community. Add yours below.` : 'Be the first to comment.'}</p>`}</div>
-    <form class="chat-form" id="commentForm" data-id="${id}" style="padding:16px 0 0"><input id="c-text" maxlength="200" placeholder="Add a comment…" aria-label="Comment" required><button class="btn" aria-label="Post comment">${ICON.send}</button></form>`);
 }
 
 /* =====================================================================
@@ -1466,18 +1405,6 @@ document.addEventListener('click', async e => {
     case 'place-filter': saveUI('placeSport', id); ui.openPlace = null; render(); break;
     case 'toggle-place': ui.openPlace = ui.openPlace === id ? null : id; render(); break;
 
-    case 'reel-filter': saveUI('reelSport', id); render(); break;
-    case 'reel-tab': saveUI('reelTab', id); render(); break;
-    case 'reel-like': await api.toggleReel('liked', id); render(); break;
-    case 'reel-save': { const on = await api.toggleReel('saved', id); render(); toast(on ? 'Saved to your reels' : 'Removed from saved'); break; }
-    case 'reel-follow': { const on = await api.toggleReel('following', id); render(); toast(on ? `Following ${id}` : `Unfollowed ${id}`); break; }
-    case 'reel-comments': openComments(id); break;
-    case 'reel-share': {
-      const r = (await api.reels({})).find(x => x.id === id), text = `${r.title} by ${r.creator} on Rally Provo`;
-      try { await navigator.clipboard.writeText(text); toast('Copied to share'); } catch (err) { toast('Couldn’t copy here. Long-press the title to share it.'); }
-      break; }
-    case 'reel-report': await api.hideReel(id, true); render(); toast('Reel reported and hidden', { label: 'Undo', run: async () => { await api.hideReel(id, false); render(); } }); break;
-    case 'post-reel': openComposer(); break;
 
     case 'complete-challenge': { const rec = await api.completeChallenge(); render(); if (rec) challengeToast(rec); break; }
     case 'swap-challenge': await api.swapChallenge(id); render(); toast('Today’s challenge swapped'); break;
@@ -1500,7 +1427,7 @@ document.addEventListener('submit', async e => {
   if (f.id === 'resultForm') {
     const r = { score: $('#r-score').value.trim().slice(0, 40), met: Math.min(30, Math.max(0, Math.round(Number($('#r-met').value) || 0))), note: $('#r-note').value.trim() };
     const res = await api.saveResult(f.dataset.id, r);
-    if (res.error) return toast(/score|column|permission|42501|42703/i.test(`${res.error.code} ${res.error.message}`) ? 'Saving results isn’t switched on yet. Ask the team to apply migration 015.' : 'Could not save the result. Check your connection and try again.');
+    if (res.error) return toast(/score|column|permission|42501|42703/i.test(`${res.error.code} ${res.error.message}`) ? 'Saving results isn’t switched on yet. Please try again later.' : 'Could not save the result. Check your connection and try again.');
     closeModal(); render(); return toast('Result saved. Your stats are updated.');
   }
   if (f.id === 'gameForm') {
@@ -1546,23 +1473,17 @@ document.addEventListener('submit', async e => {
     const name = $(`#${pre}-name`).value.trim(), sports = readSports(pre), avail = readAvail(f), bio = $(`#${pre}-bio`).value.trim();
     if (setup && !pendingPhoto.o) return fail('Add a profile photo so players know who they’re meeting.', $('[data-pick-photo="o"]'));
     if (setup && !name) return fail('Add your first name.', $('#o-name'));
+    const birthday = $(`#${pre}-bday`).value, bdayProblem = birthdayProblem(birthday);
+    if (bdayProblem) return fail(bdayProblem, $(`#${pre}-bday`));
     if (!Object.keys(sports).length) return fail('Pick at least one sport and your level in it.', $(`#${pre}-sp-${SPORTS[0].id}`));
     if (!avail.length) return fail('Pick at least one time you’re usually free.', $('.week-c input', f));
     const btn = $('button[type="submit"]', f); btn.disabled = true;
     try {
       const user = window.RallyAuth && window.RallyAuth.user();
-      await api.saveProfile({ ...S().profile, name, photo: pendingPhoto[pre] || '', bio, sports, avail, ownerId: setup && user ? user.id : S().profile.ownerId });
+      await api.saveProfile({ ...S().profile, name, birthday, photo: pendingPhoto[pre] || '', bio, sports, avail, ownerId: setup && user ? user.id : S().profile.ownerId });
     } catch (err) { btn.disabled = false; return fail('Your profile could not be saved. ' + (err.message || 'Try again.')); }
     if (setup) { finishOnboarding(); toast('Profile created. Welcome to Rally Provo!'); }
     else { closeModal(); renderMe(); render(); toast('Profile saved. Your matches are updated.'); }
-  }
-  if (f.id === 'reelForm') {
-    await api.postReel({ title: $('#r-title').value.trim(), sport: $('#r-sport').value, cat: $('#r-cat').value, caption: $('#r-caption').value.trim() });
-    saveUI('reelTab', 'for-you'); saveUI('reelSport', 'all'); closeModal(); render(); toast('Posted to the Provo feed');
-  }
-  if (f.id === 'commentForm') {
-    const text = $('#c-text').value.trim(); if (!text) return;
-    await api.addComment(f.dataset.id, text); openComments(f.dataset.id); render();
   }
 });
 
@@ -1639,6 +1560,8 @@ async function boot(user) {
   if (needsProfile(user)) return showOnboarding(user);
   startApp();
   if (!isComplete(S().profile)) toast('Your profile is missing a few details.', { label: 'Finish profile', run: () => openProfile() });
+  // Accounts made before the 18+ rule have no birthday yet; ask once per visit.
+  else if (!S().profile.birthday) toast('Add your birthday to your profile. Rally Provo is for players 18 and older.', { label: 'Add birthday', run: () => openProfile() });
 }
 if (window.RallyAuth) window.RallyAuth.whenSignedIn(boot); else startApp();
 })();
