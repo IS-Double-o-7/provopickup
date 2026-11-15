@@ -1,7 +1,7 @@
 # Rally Provo
 
 A sports-matching app for finding people to play with around Provo: swipe to match
-players, chat, plan games, browse courts and reels, and track daily challenges and stats.
+players, chat, plan games, browse courts, and track daily challenges and stats.
 
 **Live site:** <https://is-double-o-7.github.io/provopickup/> (GitHub Pages, deployed from `main`)
 
@@ -48,6 +48,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | L9 | Phone numbers and birthdays are visible only to their owner | Complete | Live database: a signed-out client reads 0 rows from `profile_private` and cannot read `auth_uid` (#8, #11) |
 | L10 | A user cannot create or change another user's profile | Complete | Live database: an update against another profile changes 0 rows; a second profile per account is rejected (#7) |
 | L11 | A player can permanently delete their profile and login from **Your profile** (type DELETE to confirm) | Not complete | Works against a stand-in database: profile, photo, sports, availability, swipes and login removed, old password rejected. Needs migration 009 applied, then a live check |
+| L12 | Players must be 18 or older: profile setup requires a birthday, and anyone under 18 can't finish it or change their birthday to under 18 | Not complete | Front end done (#61): tested 'turns 18 tomorrow' (refused, nothing saved) and 'turns 18 today' (allowed). Accounts made earlier get an 'Add birthday' reminder. A database check for 18+ is still to come (#7, Jordan) |
 
 ### Matching (Play page)
 
@@ -67,14 +68,14 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | # | Requirement | Status | Evidence |
 |---|---|---|---|
 | C1 | Book, view and cancel a game on the Calendar, saved in Postgres | Complete | Calendar vertical slice (#1) |
-| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Games are still hosted by the demo `me` profile and every account sees the same calendar |
+| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Front end done (#66, Kyle's #42 brought up to date): games are hosted by the signed-in player and each player sees only games they planned or were invited to; tested with 3 accounts. Still needed: Jordan's owner-only database rule (migration 010's policies, re-applied) so other players are refused by the database too, not only hidden |
 | C3 | New games can only be scheduled for a future date and time (up to a year ahead) | Complete | #55: picker limits plus a save check in local time; tested yesterday, earlier today and 400 days out (all refused) and tomorrow (saved) |
-| C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Not complete | Front end done; needs migration 015 (adds `event.score` and an update rule limited to played games and those three fields) applied in Supabase |
+| C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Not complete | Front end done; needs migration 016 (adds `event.score` and an update rule limited to played games and those three fields) applied in Supabase |
 | C5 | The Rally Provo logo takes a signed-in player to Home | Complete | Logo in the sidebar and the phone top bar is a link to Home; tested on desktop and mobile |
 | X1 | Message a match (chat saved in the database) | Complete | #39: messages saved in Postgres, only to mutual matches, unread badge clears when read; two-player test passed |
 | X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list |
 | X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules (contrast with tinted backgrounds, labels, names, landmarks, headings, ARIA) finds no issues on Log in, Sign up, Profile setup, Your profile, Play, Messages, Calendar and Courts in light and dark mode after the Courts label fix; Home still has a heading-order note |
-| X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Reels, Challenge and Stats not checked yet |
+| X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Challenge and Stats not checked yet |
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
 | X6 | The four Key Results update automatically from user activity | Not complete | Not started |
 | X7 | Admin portal | Not complete | Not started |
@@ -101,6 +102,32 @@ carries. The source is `docs/architecture.svg`.
   Supabase Edge Function sends each new game to an AI model API, which writes an invite,
   and the function posts it to Discord. This is the team's leading candidate, not yet
   approved.
+
+---
+
+## Data Flow Diagram
+
+![Rally Provo level 1 data flow diagram](docs/dfd-level1.png)
+
+Yourdon/DeMarco notation: rectangles are external entities, numbered circles are
+processes, and the open-ended boxes on the right are data stores. Every arrow is
+labeled with the data it carries. The Level 0 context diagram is kept alongside it in
+Lucidchart and is not exported here yet.
+
+| Process | What it does | Data store |
+|---|---|---|
+| 1.0 Manage Profile | Sign-in, sign-up and profile editing | D1 `profile` |
+| 2.0 Match Players | Swipe, like/pass, mutual match | D2 `choice` |
+| 3.0 Exchange Messages | Chat between matched players | D3 `messages` |
+| 4.0 Schedule Games | Book, cancel and restore games | D4 `event` / `event_attendee` |
+| 5.0 Browse Courts | Court search and listings | D5 `venue` |
+| 6.0 Manage Venues | Adding and editing courts (**planned**) | D5 `venue` |
+
+A DFD shows the designed flow, not what is built today. Right now only **4.0 Schedule
+Games** is backed by the database end to end. Processes 1.0, 2.0, 3.0 and 5.0 run on
+browser state or sample data — the tables exist, and the messaging wiring is waiting in
+PR #39. **6.0 Manage Venues** belongs to the planned admin portal described above; there
+is no add-court screen in the app today.
 
 ---
 
@@ -152,7 +179,7 @@ The source is `docs/erd.svg`.
 | **Reporting** | Safety reports | ReportingID (PK), Reporter (FK), ReportedOn (FK), ReportedAt, Why |
 | **Venue** | A court, park or field | VenueID (PK), VenueName, Setting, CourtCount, Unit, MilesAway, BusyNote, Latitude, Longitude |
 | **Venue-Interest** | Which sports a venue supports | VenueInterestID (PK), VenueID (FK), InterestID (FK) |
-| **Event** | A scheduled or played game | EventID (PK), HostID (FK), InterestID (FK), VenueID (FK), EventDate, EventTime, Note, NewPeopleMet, Score (015), CreatedAt |
+| **Event** | A scheduled or played game | EventID (PK), HostID (FK), InterestID (FK), VenueID (FK), EventDate, EventTime, Note, NewPeopleMet, Score (016), CreatedAt |
 | **EventAttendee** | Who is playing in a game | EventAttendeeID (PK), EventID (FK), ProfileID (FK), Status |
 
 ### Relationships and cardinality
@@ -367,7 +394,7 @@ Postgres (and the toast's **Undo** puts it back).
 | **Play: deck, likes, passes, undo, matches** | **Supabase Postgres** (`choice`, `my_matches()`) |
 | **Calendar: book, view and cancel a game** | **Supabase Postgres**, not yet tied to the signed-in account |
 | Stats and streaks | Computed from the same calendar events |
-| Messages, reels, challenges, courts and maps | Still browser `localStorage` or sample data |
+| Challenges and maps | Still browser `localStorage` or sample data |
 
 See **Behavioral Requirements** above for what has been checked end to end.
 
@@ -383,7 +410,9 @@ See **Behavioral Requirements** above for what has been checked end to end.
 - `app.js` – data, logic and every screen
 - `db/schema.sql` – the tables from the ERD
 - `db/seed.sql` – sample rows for every table
-- `docs/erd.png` – the diagram above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
+- `docs/erd.png` – the ERD above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
+- `docs/dfd-level1.png` – the level 1 data flow diagram above (source lives in Lucidchart)
+- `docs/dfd-prompt.md` – the prompts used to generate the data flow diagrams
 
 ### Bump the asset version when you change the front end
 
@@ -413,7 +442,7 @@ If you are testing the live site and something looks wrong, hard-refresh
 ### How `app.js` is organized
 
 1. **Helpers** – date formatting, escaping, icons
-2. **Reference data** – sports, courts, sample players, challenges, reels
+2. **Reference data** – sports, courts, sample players, challenges
 3. **Store + API** – the only place data is read or saved
 4. **Supabase** – the database client and row mapping
 5. **Illustrations** – court drawings used for cards and covers
@@ -426,6 +455,5 @@ If you are testing the live site and something looks wrong, hard-refresh
 ## Notes
 
 - Players, courts and community numbers are sample data.
-- Players' profile photos are real uploads. Demo players without a photo show initials,
-  and reel covers are still drawn court illustrations.
+- Players' profile photos are real uploads. Demo players without a photo show initials.
 - Fonts load from Google Fonts and fall back to system fonts offline.
