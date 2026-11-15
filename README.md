@@ -3,7 +3,7 @@
 A sports-matching app for finding people to play with around Provo: swipe to match
 players, chat, plan games, browse courts, and track daily challenges and stats.
 
-**Live site:** <https://is-double-o-7.github.io/provopickup/> (GitHub Pages, deployed from `main`)
+**Live site:** <https://rallyprovo.com/> (GitHub Pages, deployed from `main`)
 
 ---
 
@@ -79,7 +79,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
 | X6 | The four Key Results update automatically from user activity | Not complete | Not started |
 | X7 | Admin portal | Not complete | Not started |
-| X8 | The site is live at a real URL anyone can open | Complete | <https://is-double-o-7.github.io/provopickup/>; redeploys on every merge to `main` |
+| X8 | The site is live at a real URL anyone can open | Complete | <https://rallyprovo.com/>; redeploys on every merge to `main` |
 
 ---
 
@@ -214,7 +214,7 @@ The source is `docs/erd.svg`.
 | Backend / API | Supabase (backend as a service) | Supabase hands us a REST API over our tables automatically, so there is no server code to write or host. |
 | Database | Postgres, hosted by Supabase (free tier) | Real SQL with real foreign keys, so the ERD maps to actual constraints instead of being decorative. The table editor also lets every teammate *see* the rows, which made debugging much easier. |
 | Security | Postgres row-level security (RLS) | Controls exactly what the public key is allowed to read and write. |
-| Hosting | GitHub Pages, deployed from `main` | The app is static files, so there is nothing to build; every merge to `main` is live at <https://is-double-o-7.github.io/provopickup/> within a minute or two. |
+| Hosting | GitHub Pages, deployed from `main` | The app is static files, so there is nothing to build; every merge to `main` is live at <https://rallyprovo.com/> within a minute or two. |
 
 **Why this stack fits our team.** Nobody on the team is a full-time backend developer, and
 the assignment is graded on one button working end to end, not on infrastructure. A
@@ -282,7 +282,7 @@ fine, and you probably already have one).
 4. **Open it.** Go to <http://localhost:8000>. You land on the Log in / Sign up page;
    after signing in (and setting up your profile the first time) you reach the Home
    screen. You don't need to run it locally just to use or test the app: the live site
-   is <https://is-double-o-7.github.io/provopickup/>.
+   is <https://rallyprovo.com/>.
 
 **If the calendar is empty** and you see "Could not reach the database", the Supabase
 project is paused (free-tier projects sleep after inactivity). Open the project in the
