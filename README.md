@@ -97,8 +97,12 @@ carries. The source is `docs/architecture.svg`.
   own database (RDS), hosted on AWS.
 - **Where the apps connect (proposed):** the admin server reads reports and player
   accounts from Supabase and can hide or restore profiles, using a server-only key.
-- **External services:** jsDelivr and Google Fonts (code library and fonts) and
-  Supabase's email sender (confirmation link) are live. The AI workflow is planned: a
+- **External services:** jsDelivr and Google Fonts (code library and fonts),
+  Supabase's email sender (confirmation link), and OpenStreetMap's Nominatim
+  geocoder are live. Nominatim turns the address typed into "Add a court" into
+  map coordinates; it is free, needs no key, and was approved by the Product
+  Owner on PR #53. It is called only when a player submits the form, which keeps
+  us inside Nominatim's usage policy of about one request a second. The AI workflow is planned: a
   Supabase Edge Function sends each new game to an AI model API, which writes an invite,
   and the function posts it to Discord. This is the team's leading candidate, not yet
   approved.
