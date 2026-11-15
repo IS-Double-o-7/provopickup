@@ -68,7 +68,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | # | Requirement | Status | Evidence |
 |---|---|---|---|
 | C1 | Book, view and cancel a game on the Calendar, saved in Postgres | Complete | Calendar vertical slice (#1) |
-| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Games are still hosted by the demo `me` profile and every account sees the same calendar |
+| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Front end done (#66, Kyle's #42 brought up to date): games are hosted by the signed-in player and each player sees only games they planned or were invited to; tested with 3 accounts. Still needed: Jordan's owner-only database rule (migration 010's policies, re-applied) so other players are refused by the database too, not only hidden |
 | C3 | New games can only be scheduled for a future date and time (up to a year ahead) | Complete | #55: picker limits plus a save check in local time; tested yesterday, earlier today and 400 days out (all refused) and tomorrow (saved) |
 | C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Not complete | Front end done; needs migration 016 (adds `event.score` and an update rule limited to played games and those three fields) applied in Supabase |
 | C5 | The Rally Provo logo takes a signed-in player to Home | Complete | Logo in the sidebar and the phone top bar is a link to Home; tested on desktop and mobile |
