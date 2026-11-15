@@ -10,6 +10,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const DAY = 864e5;
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const slug = v => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
 const parseISO = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const todayISO = () => iso(today0());
@@ -288,10 +289,12 @@ async function persistProfilePhoto(user, profileId, photo) {
   if (result.error) throw authError('Your profile fields were saved, but your photo could not be saved.', result.error);
   return photoUrl;
 }
-const rowToGame = r => ({
+// The signed-in player's own id for real accounts; the seed placeholder 'me' for demo accounts.
+const calendarMe = () => hasLiveAccount() ? requireProfileId() : ME;
+const rowToGame = (r, me = ME) => ({
   id: r.event_id, sport: r.interest_id, place: r.venue_id,
   date: r.event_date, time: String(r.event_time).slice(0, 5),
-  with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== ME),
+  with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== me),
   met: r.new_people_met || 0, note: r.note || '', score: r.score || '',
 });
 // A game is over once its start time has passed (browser local time). Only then can a result be added.
@@ -640,13 +643,67 @@ const api = {
   },
   async places(sportId = 'all') { return PLACES.filter(p => sportId === 'all' || p.sports.includes(sportId)).sort((a, b) => a.mi - b.mi); },
 
+  // Adding a court. venue.latitude/longitude are NOT NULL (Issue #26), so the form
+  // takes an address and geocodes it with OpenStreetMap Nominatim — the same source
+  // the seeded courts came from. No key, so nothing secret reaches the browser.
+  async geocode(address) {
+    try {
+      const q = encodeURIComponent(`${address}, Provo, Utah`);
+      const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${q}`, { headers: { Accept: 'application/json' } });
+      if (!r.ok) return null;
+      const hits = await r.json();
+      if (!Array.isArray(hits) || !hits.length) return null;
+      const lat = Number(hits[0].lat), lng = Number(hits[0].lon);
+      return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    } catch (error) { console.error('Could not look up that address', error); return null; }
+  },
+
+  // The insert is attributed to the signed-in player: the "add venue" policy in
+  // migration 014 refuses any row whose added_by is not you, so a signed-out
+  // player is stopped by the database, not only by the hidden button.
+  async addCourt(c) {
+    if (!hasLiveAccount()) return { error: authError('Sign in to add a court.') };
+    const myId = requireProfileId();
+    const id = `${slug(c.name) || 'court'}-${Math.random().toString(36).slice(2, 6)}`;
+    const { error } = await db.from('venue').insert({
+      venue_id: id, venue_name: c.name, setting: c.setting, court_count: c.count,
+      unit: c.unit, busy_note: c.busy, latitude: c.lat, longitude: c.lng, added_by: myId,
+    });
+    if (error) return { error };
+    // Losing the sport tags would hide the court behind every filter chip, so this
+    // failure is reported rather than swallowed, even though the court itself saved.
+    const tags = await db.from('venue_interest').insert(c.sports.map(s => ({ venue_id: id, interest_id: s })));
+    await api.syncPlaces();
+    return { error: null, id, tagError: tags.error || null };
+  },
+
   async syncGames() {
     const cols = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)';
-    let { data, error } = await db.from('event').select(cols + ', score');
-    // Before migration 016 is applied there is no score column; load games without it.
-    if (error && (error.code === '42703' || /score/.test(error.message || ''))) ({ data, error } = await db.from('event').select(cols));
+    // Load with the score column (migration 016); before 016 is applied, retry without it.
+    const load = async narrow => {
+      let res = await narrow(db.from('event').select(cols + ', score'));
+      if (res.error && (res.error.code === '42703' || /score/.test(res.error.message || ''))) res = await narrow(db.from('event').select(cols));
+      return res;
+    };
+    if (!hasLiveAccount()) {
+      const { data, error } = await load(q => q);
+      if (error) { console.error('Could not load games', error); return { error }; }
+      S().games = data.map(r => rowToGame(r)); store.save(); return { error: null };
+    }
+    // Real accounts see only the games they are playing in. The host is always saved as an
+    // attendee too, so "my attendee rows" covers games I host and games I was invited to.
+    const me = requireProfileId();
+    const mine = await db.from('event_attendee').select('event_id').eq('profile_id', me);
+    if (mine.error) { console.error('Could not load games', mine.error); return { error: mine.error }; }
+    const ids = [...new Set((mine.data || []).map(r => r.event_id))];
+    if (!ids.length) { S().games = []; store.save(); return { error: null }; }
+    const { data, error } = await load(q => q.in('event_id', ids));
     if (error) { console.error('Could not load games', error); return { error }; }
-    S().games = data.map(rowToGame); store.save(); return { error: null };
+    const games = data.map(r => rowToGame(r, me));
+    // Names shown on the calendar come from the player cache, so load anyone not cached yet.
+    try { await loadPlayersForIds([...new Set(games.flatMap(g => g.with))].filter(id => !person(id))); }
+    catch (e) { console.error('Could not load the players in your games', e); }
+    S().games = games; store.save(); return { error: null };
   },
 
   async games({ from, to } = {}) {
@@ -655,18 +712,25 @@ const api = {
   },
 
   async addGame(g) {
+    const me = calendarMe();
     const { data, error } = await db.from('event').insert({
-      host_id: ME, interest_id: g.sport, venue_id: g.place,
+      host_id: me, interest_id: g.sport, venue_id: g.place,
       event_date: g.date, event_time: g.time,
       note: g.note || null, new_people_met: g.met,
     }).select('event_id').single();
     if (error) { console.error('Could not save game', error); return { error }; }
     g.id = data.event_id;
     const status = g.date < todayISO() ? 'played' : 'going';
-    const people = [ME, ...g.with];
+    const people = [me, ...g.with];
     const { error: aErr } = await db.from('event_attendee')
       .insert(people.map(p => ({ event_id: g.id, profile_id: p, status })));
-    if (aErr) console.error('Could not save who is playing', aErr);
+    if (aErr) {
+      // The calendar is keyed off attendee rows, so a game with none is invisible to everyone.
+      // Remove it again instead of leaving a row nobody can see.
+      console.error('Could not save who is playing', aErr);
+      await db.from('event').delete().eq('event_id', g.id);
+      return { error: aErr };
+    }
     S().games.push(g); store.save();
     const t = todaysChallenge();
     return { game: g, done: t.auto === 'game' && g.date >= todayISO() ? completeToday() : null, error: null };
@@ -684,22 +748,31 @@ const api = {
   },
 
   async removeGame(id) {
-    const s = S(), i = s.games.findIndex(g => g.id === id);
+    const s = S(), i = s.games.findIndex(g => String(g.id) === String(id));
     if (i < 0) return null;
-    const { error } = await db.from('event').delete().eq('event_id', id);
+    // A delete the database refuses (not the host) is not an error: it just removes 0 rows.
+    // Ask for the deleted rows back so "nothing removed" can be told apart from "removed".
+    const { data, error } = await db.from('event').delete().eq('event_id', s.games[i].id).select('event_id');
     if (error) { console.error('Could not remove game', error); return null; }
+    if (!data || !data.length) { toast('Only the person who planned this game can cancel it.'); return null; }
     const [g] = s.games.splice(i, 1); store.save(); return g;
   },
 
   async restoreGame(g) {
+    const me = calendarMe();
     const { data, error } = await db.from('event').insert({
-      host_id: ME, interest_id: g.sport, venue_id: g.place,
+      host_id: me, interest_id: g.sport, venue_id: g.place,
       event_date: g.date, event_time: g.time,
       note: g.note || null, new_people_met: g.met,
     }).select('event_id').single();
     if (error) { console.error('Could not restore game', error); return; }
     const status = g.date < todayISO() ? 'played' : 'going';
-    await db.from('event_attendee').insert([ME, ...g.with].map(p => ({ event_id: data.event_id, profile_id: p, status })));
+    const { error: aErr } = await db.from('event_attendee').insert([me, ...g.with].map(p => ({ event_id: data.event_id, profile_id: p, status })));
+    if (aErr) {
+      console.error('Could not restore who is playing', aErr);
+      await db.from('event').delete().eq('event_id', data.event_id);
+      return;
+    }
     g.id = data.event_id; S().games.push(g); store.save();
   },
 
@@ -1079,25 +1152,98 @@ V.courts = async () => {
   const used = [...new Set(PLACES.flatMap(p => p.sports))];
   view('courts').innerHTML = `
     <header class="page-head"><div><p class="eyebrow">Around Provo</p><h1>Courts</h1>
-      <p class="sub">Where people are playing. Open a spot to see who plays there and plan a game.</p></div></header>
+      <p class="sub">Where people are playing. Open a spot to see who plays there and plan a game.</p></div>
+      <button class="btn" data-action="add-court">${ICON.plus} Add a court</button></header>
     ${sportChips('place-filter', sf, SPORTS.map(s => s.id).filter(id => used.includes(id)))}
+    <div class="courts-map" id="courtsMap" role="application" aria-label="Map of courts around Provo"><p class="map-status" id="mapStatus" role="status">Loading the map…</p></div>
     <div class="places block">${list.map(pl => placeCard(pl, upcoming)).join('') || `<div class="card empty"><h3>No spots for this sport yet</h3></div>`}</div>`;
+  drawCourtsMap(list);
 };
+
+/* ---- Courts map ----
+   OpenStreetMap tiles through Leaflet: free, no API key, no account, and the same
+   source the Add-a-court form already geocodes against. The pins are plain divIcons
+   rather than Leaflet's default images, because those load from a path relative to
+   the stylesheet and break when the CSS comes from a CDN.
+   V.courts replaces the whole view with innerHTML, so the old Leaflet instance has to
+   be torn down first or it leaves handlers bound to a container that no longer exists. */
+let courtsMap = null;
+// One place to say what the map is doing. The element sits on top of the map rather
+// than replacing it, because Leaflet measures its container when it starts and sizes
+// the tiles wrong if that container was display:none at the time.
+function mapStatus(text, kind) {
+  const el = $('#mapStatus');
+  if (!el) return;
+  el.textContent = text || '';
+  el.hidden = !text;
+  el.dataset.kind = kind || 'info';
+}
+function drawCourtsMap(list) {
+  const el = $('#courtsMap');
+  if (!el) return;
+  if (courtsMap) { courtsMap.remove(); courtsMap = null; }
+
+  // If the CDN is blocked or the script failed, say so instead of leaving a grey box.
+  if (typeof L === 'undefined') {
+    mapStatus('The map could not load. The court list below still works.', 'warn');
+    return;
+  }
+  const pins = list.filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (!pins.length) {
+    mapStatus(list.length ? 'No court in this sport has a location saved yet.' : 'No courts to show on the map yet.', 'info');
+    return;
+  }
+
+  mapStatus('Loading the map…', 'info');
+  try {
+    courtsMap = L.map(el, { scrollWheelZoom: false });
+    const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    });
+    // Clear the "Loading" line as soon as the first screenful of tiles is in. If the
+    // tile server is unreachable the load event never fires, so fall back on a timer
+    // and tell the player the pins are still right.
+    let settled = false;
+    const settle = (text, kind) => { if (settled) return; settled = true; clearTimeout(timer); mapStatus(text, kind); };
+    const timer = setTimeout(() => settle('The map images are slow to load. The pins and the list below are still correct.', 'warn'), 8000);
+    tiles.on('load', () => settle('', 'info'));
+    tiles.on('tileerror', () => settle('Map images could not be loaded. The pins and the list below are still correct.', 'warn'));
+    tiles.addTo(courtsMap);
+
+    pins.forEach(p => {
+      const colour = (ART[p.sports[0]] || [])[0] || 'var(--court)';
+      const where = [p.setting, p.count ? `${p.count} ${p.unit}` : '', p.mi ? `${p.mi} mi away` : ''].filter(Boolean).join(' · ');
+      L.marker([p.lat, p.lng], {
+        title: p.name, alt: p.name, keyboard: true,
+        icon: L.divIcon({ className: 'court-pin', html: `<span style="background:${esc(colour)}"></span>`, iconSize: [18, 18], iconAnchor: [9, 9] }),
+      }).addTo(courtsMap).bindPopup(
+        `<strong>${esc(p.name)}</strong><br><small>${esc(p.sports.map(s => sport(s).name).join(' · '))}</small>` +
+        (where ? `<br><small>${esc(where)}</small>` : '') +
+        `<br><button type="button" class="btn sm" data-action="toggle-place" data-id="${esc(p.id)}">Details</button>`);
+    });
+    courtsMap.fitBounds(pins.map(p => [p.lat, p.lng]), { padding: [26, 26], maxZoom: 14 });
+  } catch (error) {
+    console.error('Could not draw the courts map', error);
+    if (courtsMap) { try { courtsMap.remove(); } catch (e) { /* already gone */ } courtsMap = null; }
+    mapStatus('The map could not be drawn. The court list below still works.', 'warn');
+  }
+}
+
 function placeCard(pl, upcoming) {
   const open = ui.openPlace === pl.id;
   const tone = /Busy/.test(pl.busy) ? 'clay' : /Steady/.test(pl.busy) ? 'warn' : 'good';
   const regulars = PEOPLE.filter(p => p.court === pl.id), mine = upcoming.filter(g => g.place === pl.id);
   const matched = S().matches;
   return `<article class="card place">
-    <button class="place-row" data-action="toggle-place" data-id="${pl.id}" aria-expanded="${open}">
+    <button class="place-row" data-action="toggle-place" data-id="${esc(pl.id)}" aria-expanded="${open}">
       <span class="place-ic">${courtSVG(pl.sports[0])}</span>
-      <span class="min0"><strong>${esc(pl.name)}</strong><small class="muted">${pl.sports.map(s => sport(s).name).join(' · ')}</small><small class="muted">${pl.setting} · ${pl.count} ${pl.unit} · ${pl.mi} mi</small></span>
+      <span class="min0"><strong>${esc(pl.name)}</strong><small class="muted">${pl.sports.map(s => sport(s).name).join(' · ')}</small><small class="muted">${[pl.setting, pl.count ? `${pl.count} ${pl.unit}` : '', pl.mi ? `${pl.mi} mi` : ''].filter(Boolean).map(esc).join(' · ')}</small></span>
       <span class="pill ${tone}">${esc(pl.busy)}</span>
     </button>
     ${open ? `<div class="place-detail">
       <div><p class="eyebrow">Players who play here</p>${regulars.length ? regulars.map(p => `<div class="list-row">${avatar(p.name, 32)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ')}</small></div>${matched.includes(p.id) ? `<button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button>` : `<button class="btn ghost sm" data-action="play-person" data-id="${p.id}">View</button>`}</div>`).join('') : '<p class="muted small">No regulars listed yet.</p>'}</div>
       <div><p class="eyebrow">Your games here</p>${mine.length ? mine.map(gameRow).join('') : '<p class="muted small">Nothing planned here yet.</p>'}</div>
-      <div class="row full"><button class="btn sm" data-action="add-game" data-place="${pl.id}">${ICON.plus} Plan a game here</button><a class="btn ghost sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name + ', Provo, UT')}" target="_blank" rel="noopener">Directions</a></div>
+      <div class="row full"><button class="btn sm" data-action="add-game" data-place="${esc(pl.id)}">${ICON.plus} Plan a game here</button><a class="btn ghost sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pl.name + ', Provo, UT')}" target="_blank" rel="noopener">Directions</a></div>
     </div>` : ''}
   </article>`;
 }
@@ -1295,6 +1441,27 @@ function toast(msg, action) {
 }
 
 const placeOptions = (sp, selected) => { const opts = PLACES.filter(p => p.sports.includes(sp)); return (opts.length ? opts : PLACES).map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}</option>`).join(''); };
+const COURT_BUSY = ['Quiet', 'Quiet weekdays', 'Steady all day', 'Busy evenings', 'Busy weekends'];
+const COURT_UNITS = ['courts', 'fields', 'nets', 'lanes'];
+function openCourtModal() {
+  openModal(`${modalHead('Courts', 'Add a court', 'It shows up for everyone in Provo, so use the name people already call it.')}
+    <form class="form" id="courtForm">
+      <div class="field"><label for="c-name">Name</label><input id="c-name" maxlength="80" placeholder="Rotary Park Courts" required></div>
+      <div class="field"><label for="c-address">Address or landmark</label><input id="c-address" maxlength="120" placeholder="1460 N 1300 W" required>
+        <small class="muted">We look this up on the map, so a street address works best. Provo is assumed.</small></div>
+      <fieldset class="field"><legend>Sports played here</legend>
+        <div class="check-grid">${SPORTS.map(sp => `<label class="check"><input type="checkbox" name="c-sport" value="${sp.id}"> ${sp.icon} ${esc(sp.name)}</label>`).join('')}</div>
+      </fieldset>
+      <div class="form-grid">
+        <div class="field"><label for="c-setting">Setting</label><select id="c-setting"><option>Outdoor</option><option>Indoor</option></select></div>
+        <div class="field"><label for="c-count">How many</label><input type="number" id="c-count" min="1" max="99" value="2" inputmode="numeric"></div>
+        <div class="field"><label for="c-unit">Of what</label><select id="c-unit">${COURT_UNITS.map(u => `<option>${u}</option>`).join('')}</select></div>
+        <div class="field"><label for="c-busy">How busy</label><select id="c-busy">${COURT_BUSY.map(b => `<option>${b}</option>`).join('')}</select></div>
+      </div>
+      <div class="row"><button class="btn" type="submit" id="c-save">Add court</button><button class="btn ghost" type="button" data-action="close">Cancel</button></div>
+      <span id="c-status" class="sr-only" role="status" aria-live="polite"></span>
+    </form>`);
+}
 function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
   const me = S().profile, p0 = withId ? person(withId) : null;
   if (!sp) sp = pl ? place(pl).sports[0] : p0 ? ((p0.sports.find(([s]) => me.sports[s]) || p0.sports[0])[0]) : Object.keys(me.sports)[0] || 'pickleball';
@@ -1318,7 +1485,7 @@ function openGameModal({ sport: sp, place: pl, date, withId } = {}) {
 }
 function openResultModal(id) {
   const g = S().games.find(x => String(x.id) === String(id)); if (!g) return;
-  openModal(`${modalHead('Calendar', g.score || g.met ? 'Edit result' : 'Add result', `${sport(g.sport).icon} ${sport(g.sport).name} at ${place(g.place).name}, ${fmtDay(g.date)} at ${fmtTime(g.time)}`)}
+  openModal(`${modalHead('Calendar', g.score || g.met ? 'Edit result' : 'Add result', `${sport(g.sport).icon} ${sport(g.sport).name} at ${esc(place(g.place).name)}, ${fmtDay(g.date)} at ${fmtTime(g.time)}`)}
     <form class="form" id="resultForm" data-id="${esc(g.id)}">
       <div class="form-grid">
         <div class="field"><label for="r-score">Score <span class="muted" style="font-weight:500">(optional)</span></label><input id="r-score" maxlength="40" value="${esc(g.score || '')}" placeholder="e.g. 11-7, 9-11" autocomplete="off"></div>
@@ -1447,6 +1614,7 @@ document.addEventListener('click', async e => {
   const id = a.dataset.id, s = S();
   switch (a.dataset.action) {
     case 'close': closeModal(); break;
+    case 'add-court': openCourtModal(); break;
     case 'more': openSheet(); break;
     case 'open-profile': closeSheet(); await openProfile(); break;
     case 'retry-profile': { const user = window.RallyAuth && window.RallyAuth.user(); if (user) await boot(user); break; }
@@ -1511,6 +1679,33 @@ document.addEventListener('submit', async e => {
     const res = await api.saveResult(f.dataset.id, r);
     if (res.error) return toast(/score|column|permission|42501|42703/i.test(`${res.error.code} ${res.error.message}`) ? 'Saving results isn’t switched on yet. Please try again later.' : 'Could not save the result. Check your connection and try again.');
     closeModal(); render(); return toast('Result saved. Your stats are updated.');
+  }
+  if (f.id === 'courtForm') {
+    const name = $('#c-name').value.trim();
+    const address = $('#c-address').value.trim();
+    const sports = [...document.querySelectorAll('input[name="c-sport"]:checked')].map(i => i.value);
+    if (!name || !address) return toast('Add a name and an address.');
+    if (!sports.length) return toast('Pick at least one sport played here.');
+    const save = $('#c-save'), status = $('#c-status');
+    save.disabled = true; save.textContent = 'Looking up the address…'; status.textContent = 'Looking up the address.';
+    const at = await api.geocode(address);
+    if (!at) { save.disabled = false; save.textContent = 'Add court'; status.textContent = ''; return toast('We could not find that address. Try a street address.'); }
+    save.textContent = 'Saving…';
+    const res = await api.addCourt({
+      name, sports, setting: $('#c-setting').value, count: Math.max(1, Number($('#c-count').value) || 1),
+      unit: $('#c-unit').value, busy: $('#c-busy').value, lat: at.lat, lng: at.lng,
+    });
+    save.disabled = false; save.textContent = 'Add court'; status.textContent = '';
+    if (res.error) {
+      // 42501 is the row-level security refusal: signed out, or the profile is not finished.
+      const denied = res.error.code === '42501' || res.error instanceof Error;
+      return toast(denied ? 'Sign in and finish your profile to add a court.' : 'Could not save the court. Check your connection and try again.');
+    }
+    closeModal();
+    ui.openPlace = res.id;
+    saveUI('placeSport', 'all');
+    render();
+    toast(res.tagError ? 'Court added, but its sports did not save.' : `${name} is on the map.`);
   }
   if (f.id === 'gameForm') {
     const g = { sport: $('#g-sport').value, place: $('#g-place').value, date: $('#g-date').value, time: $('#g-time').value, with: $('#g-with').value ? [$('#g-with').value] : [], met: 0, note: $('#g-note').value.trim() };
@@ -1619,9 +1814,10 @@ function startApp() {
 // player sets up their profile before seeing the app.
 // Messages still live in this browser. Clear them when a different account signs
 // in, so every player starts with an empty inbox (and never sees sample chats).
+// Games are cleared too, so another account's cached calendar is never shown first.
 function claimLocalData(user) {
   if (!user || user.demo || S().accountId === user.id) return;
-  Object.assign(S(), { accountId: user.id, conversations: [], matches: [] });
+  Object.assign(S(), { accountId: user.id, conversations: [], matches: [], games: [] });
   store.save();
 }
 async function boot(user) {

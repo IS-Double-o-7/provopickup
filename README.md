@@ -3,7 +3,7 @@
 A sports-matching app for finding people to play with around Provo: swipe to match
 players, chat, plan games, browse courts, and track daily challenges and stats.
 
-**Live site:** <https://is-double-o-7.github.io/provopickup/> (GitHub Pages, deployed from `main`)
+**Live site:** <https://rallyprovo.com/> (GitHub Pages, deployed from `main`)
 
 ---
 
@@ -68,18 +68,18 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | # | Requirement | Status | Evidence |
 |---|---|---|---|
 | C1 | Book, view and cancel a game on the Calendar, saved in Postgres | Complete | Calendar vertical slice (#1) |
-| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Games are still hosted by the demo `me` profile and every account sees the same calendar |
+| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Front end done (#66, Kyle's #42 brought up to date): games are hosted by the signed-in player and each player sees only games they planned or were invited to; tested with 3 accounts. Still needed: Jordan's owner-only database rule (migration 010's policies, re-applied) so other players are refused by the database too, not only hidden |
 | C3 | New games can only be scheduled for a future date and time (up to a year ahead) | Complete | #55: picker limits plus a save check in local time; tested yesterday, earlier today and 400 days out (all refused) and tomorrow (saved) |
 | C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Not complete | Front end done; needs migration 016 (adds `event.score` and an update rule limited to played games and those three fields) applied in Supabase |
 | C5 | The Rally Provo logo takes a signed-in player to Home | Complete | Logo in the sidebar and the phone top bar is a link to Home; tested on desktop and mobile |
 | X1 | Message a match (chat saved in the database) | Complete | #39: messages saved in Postgres, only to mutual matches, unread badge clears when read; two-player test passed |
-| X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list |
+| X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list. #69 adds the map itself: a pin per court drawn from `venue.latitude` / `longitude`, filtered by the same sport chips as the list, with a popup that opens that court's details. #53 lets a signed-in player add a court, geocoded from a typed address |
 | X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules (contrast with tinted backgrounds, labels, names, landmarks, headings, ARIA) finds no issues on Log in, Sign up, Profile setup, Your profile, Play, Messages, Calendar and Courts in light and dark mode after the Courts label fix; Home still has a heading-order note |
 | X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Challenge and Stats not checked yet |
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
 | X6 | The four Key Results update automatically from user activity | Not complete | Not started |
 | X7 | Admin portal | Not complete | Not started |
-| X8 | The site is live at a real URL anyone can open | Complete | <https://is-double-o-7.github.io/provopickup/>; redeploys on every merge to `main` |
+| X8 | The site is live at a real URL anyone can open | Complete | <https://rallyprovo.com/>; redeploys on every merge to `main` |
 
 ---
 
@@ -97,11 +97,45 @@ carries. The source is `docs/architecture.svg`.
   own database (RDS), hosted on AWS.
 - **Where the apps connect (proposed):** the admin server reads reports and player
   accounts from Supabase and can hide or restore profiles, using a server-only key.
-- **External services:** jsDelivr and Google Fonts (code library and fonts) and
-  Supabase's email sender (confirmation link) are live. The AI workflow is planned: a
+- **External services:** jsDelivr, cdnjs and Google Fonts (code libraries and
+  fonts), Supabase's email sender (confirmation link), and OpenStreetMap — both
+  its Nominatim geocoder and its map tiles — are live. **The Courts map is
+  Leaflet 1.9.4 with OpenStreetMap tiles. There is no Google Maps key and none
+  is needed: no API key, no account, no billing and no quota to manage.** The
+  map needs no configuration — it works from a clean clone. If the tiles cannot
+  be reached the map says so and the court list carries on working. Nominatim turns the address typed into "Add a court" into
+  map coordinates; it is free, needs no key, and was approved by the Product
+  Owner on PR #53. It is called only when a player submits the form, which keeps
+  us inside Nominatim's usage policy of about one request a second. The AI workflow is planned: a
   Supabase Edge Function sends each new game to an AI model API, which writes an invite,
   and the function posts it to Discord. This is the team's leading candidate, not yet
   approved.
+
+---
+
+## Data Flow Diagram
+
+![Rally Provo level 1 data flow diagram](docs/dfd-level1.png)
+
+Yourdon/DeMarco notation: rectangles are external entities, numbered circles are
+processes, and the open-ended boxes on the right are data stores. Every arrow is
+labeled with the data it carries. The Level 0 context diagram is kept alongside it in
+Lucidchart and is not exported here yet.
+
+| Process | What it does | Data store |
+|---|---|---|
+| 1.0 Manage Profile | Sign-in, sign-up and profile editing | D1 `profile` |
+| 2.0 Match Players | Swipe, like/pass, mutual match | D2 `choice` |
+| 3.0 Exchange Messages | Chat between matched players | D3 `messages` |
+| 4.0 Schedule Games | Book, cancel and restore games | D4 `event` / `event_attendee` |
+| 5.0 Browse Courts | Court search and listings | D5 `venue` |
+| 6.0 Manage Venues | Adding and editing courts (**planned**) | D5 `venue` |
+
+A DFD shows the designed flow, not what is built today. Right now only **4.0 Schedule
+Games** is backed by the database end to end. Processes 1.0, 2.0, 3.0 and 5.0 run on
+browser state or sample data — the tables exist, and the messaging wiring is waiting in
+PR #39. **6.0 Manage Venues** belongs to the planned admin portal described above; there
+is no add-court screen in the app today.
 
 ---
 
@@ -188,7 +222,7 @@ The source is `docs/erd.svg`.
 | Backend / API | Supabase (backend as a service) | Supabase hands us a REST API over our tables automatically, so there is no server code to write or host. |
 | Database | Postgres, hosted by Supabase (free tier) | Real SQL with real foreign keys, so the ERD maps to actual constraints instead of being decorative. The table editor also lets every teammate *see* the rows, which made debugging much easier. |
 | Security | Postgres row-level security (RLS) | Controls exactly what the public key is allowed to read and write. |
-| Hosting | GitHub Pages, deployed from `main` | The app is static files, so there is nothing to build; every merge to `main` is live at <https://is-double-o-7.github.io/provopickup/> within a minute or two. |
+| Hosting | GitHub Pages, deployed from `main` | The app is static files, so there is nothing to build; every merge to `main` is live at <https://rallyprovo.com/> within a minute or two. |
 
 **Why this stack fits our team.** Nobody on the team is a full-time backend developer, and
 the assignment is graded on one button working end to end, not on infrastructure. A
@@ -256,7 +290,7 @@ fine, and you probably already have one).
 4. **Open it.** Go to <http://localhost:8000>. You land on the Log in / Sign up page;
    after signing in (and setting up your profile the first time) you reach the Home
    screen. You don't need to run it locally just to use or test the app: the live site
-   is <https://is-double-o-7.github.io/provopickup/>.
+   is <https://rallyprovo.com/>.
 
 **If the calendar is empty** and you see "Could not reach the database", the Supabase
 project is paused (free-tier projects sleep after inactivity). Open the project in the
@@ -384,7 +418,9 @@ See **Behavioral Requirements** above for what has been checked end to end.
 - `app.js` – data, logic and every screen
 - `db/schema.sql` – the tables from the ERD
 - `db/seed.sql` – sample rows for every table
-- `docs/erd.png` – the diagram above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
+- `docs/erd.png` – the ERD above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
+- `docs/dfd-level1.png` – the level 1 data flow diagram above (source lives in Lucidchart)
+- `docs/dfd-prompt.md` – the prompts used to generate the data flow diagrams
 
 ### Bump the asset version when you change the front end
 

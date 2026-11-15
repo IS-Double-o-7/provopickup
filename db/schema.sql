@@ -116,8 +116,15 @@ create table venue (
   -- Geocoded from OpenStreetMap. Every venue must be mappable (Issue #26).
   latitude    numeric(9,6) not null,
   longitude   numeric(9,6) not null,
+  -- Who added this court (migration 014). Null means it came from the seed,
+  -- which is why the delete policy below can never remove a seeded court.
+  added_by    text references profile(profile_id) on delete set null,
   constraint venue_latitude_range  check (latitude  between -90  and 90),
-  constraint venue_longitude_range check (longitude between -180 and 180)
+  constraint venue_longitude_range check (longitude between -180 and 180),
+  constraint venue_name_not_blank  check (btrim(venue_name) <> '' and length(venue_name) <= 80),
+  constraint venue_court_count_sane check (court_count is null or court_count between 1 and 99),
+  -- Rally Provo is a Provo app, so a court elsewhere is a typo or spam.
+  constraint venue_in_utah_county  check (latitude between 39.9 and 40.6 and longitude between -112.3 and -111.0)
 );
 
 -- Many-to-many: a court hosts several sports.
@@ -134,7 +141,13 @@ create table event (
   host_id         text not null references profile(profile_id) on delete cascade,
   interest_id     text not null references interests(interest_id),
   venue_id        text not null references venue(venue_id),
-  event_date      date not null,
+  -- Bounded so a typo cannot book a game in 1779. Fixed dates, not current_date:
+  -- a non-immutable CHECK invalidates stored rows over time and breaks restore.
+  -- Added NOT VALID in migration 013, so three historical junk rows survive until
+  -- they are cleaned up and the constraint is validated.
+  event_date      date not null
+                  constraint event_date_in_range
+                  check (event_date >= date '2026-01-01' and event_date <= date '2031-01-01'),
   event_time      time not null,
   note            text,
   new_people_met  integer not null default 0,
@@ -359,6 +372,14 @@ create policy "read photo"                on photo                for select to 
 create policy "read venue"                on venue                for select to anon, authenticated using (true);
 create policy "read venue_interest"       on venue_interest       for select to anon, authenticated using (true);
 
+-- Courts are added by players (migration 014). A player may add a court only in
+-- their own name and remove only one they added; nothing lets anyone edit a
+-- court or delete a seeded one.
+create policy "add venue"                 on venue                for insert to authenticated with check (added_by = public.current_profile_id());
+create policy "remove own venue"          on venue                for delete to authenticated using (added_by is not null and added_by = public.current_profile_id());
+create policy "add venue_interest"        on venue_interest       for insert to authenticated with check (exists (select 1 from venue v where v.venue_id = venue_interest.venue_id and v.added_by = public.current_profile_id()));
+create policy "remove own venue_interest" on venue_interest       for delete to authenticated using (exists (select 1 from venue v where v.venue_id = venue_interest.venue_id and v.added_by = public.current_profile_id()));
+
 -- A pending like is not visible: you may read only the rows where you are the
 -- swiper. Mutual matches come back through my_matches().
 create policy "read own choices" on choice for select to authenticated
@@ -436,27 +457,59 @@ create policy "write own choices" on choice for all to authenticated
 -- reads are open on purpose pending the product decision in #21 and #41.
 create policy "read event" on event for select to anon, authenticated using (true);
 
-create policy "book event" on event for insert to authenticated
-  with check (true);
+-- 019: writes are owner-scoped. Reads above are still open, pending #21 / #41.
+create policy "book own event" on event for insert to authenticated
+  with check (host_id = public.current_profile_id());
 
-create policy "cancel event" on event for delete to authenticated
-  using (true);
--- 016: after a game is played, players can record its result (score, people met, note only).
+create policy "cancel own event" on event for delete to authenticated
+  using (host_id = public.current_profile_id());
+
+-- 016 added results; 019 narrowed them from "any signed-in player" to the people
+-- who actually played. SECURITY DEFINER so the policy can read event_attendee
+-- without that table's own policy being consulted from inside this one.
+create or replace function public.plays_in_event(e uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.event_attendee a
+     where a.event_id = e
+       and a.profile_id = public.current_profile_id()
+  );
+$$;
+revoke all on function public.plays_in_event(uuid) from public, anon;
+grant execute on function public.plays_in_event(uuid) to authenticated;
+
 create policy "report played event" on event for update to authenticated
-  using (event_date <= current_date) with check (event_date <= current_date);
+  using (event_date <= current_date
+         and (host_id = public.current_profile_id() or public.plays_in_event(event_id)))
+  with check (event_date <= current_date
+         and (host_id = public.current_profile_id() or public.plays_in_event(event_id)));
 revoke update on event from authenticated;
 grant update (score, new_people_met, note) on event to authenticated;
 
--- No UPDATE policy, so a booked game cannot be edited in place. Nothing in the app
--- updates one; reschedule would need its own card and its own policy.
+-- A booked game still cannot be rescheduled in place: the column grants above
+-- allow only score, new_people_met and note.
 
 create policy "read attendees" on event_attendee for select to anon, authenticated using (true);
 
-create policy "add attendees" on event_attendee for insert to authenticated
-  with check (true);
+-- 019: only the host manages the roster of their own game.
+create policy "add attendee to own game" on event_attendee for insert to authenticated
+  with check (exists (
+    select 1 from public.event e
+     where e.event_id = event_attendee.event_id
+       and e.host_id  = public.current_profile_id()
+  ));
 
-create policy "remove attendees" on event_attendee for delete to authenticated
-  using (true);
+create policy "remove attendee from own game" on event_attendee for delete to authenticated
+  using (exists (
+    select 1 from public.event e
+     where e.event_id = event_attendee.event_id
+       and e.host_id  = public.current_profile_id()
+  ));
 
 -- Second layer, so the block does not rest on policy evaluation alone.
 revoke insert, update, delete on event          from anon;
@@ -514,3 +567,103 @@ create policy "a user deletes only their own photo folder"
   on storage.objects for delete to authenticated
   using (bucket_id = 'profile-photos'
     and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---- 18+ rule and age bands (migration 016) ----
+-- Rally Provo matches strangers for meetups, so players must be 18 or older
+-- (Brook's decision as Product Owner, issue #7). The rule lives here as well as
+-- in the profile form so it does not depend on the form.
+--
+-- This is a trigger, not a CHECK constraint, because "at least 18 years old" is
+-- relative to today and a CHECK may only hold immutable expressions. Postgres
+-- allows current_date in a CHECK without complaint, which is the trap: the
+-- expression is baked into the dump, so a restore re-checks old rows against a
+-- new date and rows that were legal when written start failing.
+
+create or replace function public.profile_private_check_age()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.birthday is null then
+    return new;  -- no birthday yet is allowed; the profile just counts as incomplete
+  end if;
+  if new.birthday > current_date then
+    raise exception 'That birthday is in the future.' using errcode = '23514';
+  end if;
+  if new.birthday < date '1900-01-01' then
+    raise exception 'Check that birthday -- the year looks wrong.' using errcode = '23514';
+  end if;
+  if new.birthday > current_date - interval '18 years' then
+    raise exception 'You must be 18 or older to use Rally Provo.' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profile_private_check_age on public.profile_private;
+create trigger profile_private_check_age
+  before insert or update of birthday on public.profile_private
+  for each row execute function public.profile_private_check_age();
+
+-- The band a birthday falls in. STABLE, not IMMUTABLE: the answer depends on
+-- today, so this must never go in a CHECK constraint or a plain index.
+create or replace function public.age_band(bd date)
+returns text
+language sql
+stable
+set search_path = ''
+as $$
+  select case
+    when bd is null then null
+    when extract(year from age(current_date, bd)) < 18 then '18-'  -- legacy rows only
+    when extract(year from age(current_date, bd)) < 25 then '18-24'
+    when extract(year from age(current_date, bd)) < 35 then '25-34'
+    when extract(year from age(current_date, bd)) < 45 then '35-44'
+    when extract(year from age(current_date, bd)) < 55 then '45-54'
+    else '55+'
+  end;
+$$;
+
+-- Counts per band for the Admin page. Admin-only and counts-only, like
+-- okr_dashboard(): birthdays live in profile_private, which is owner-only.
+create or replace function public.age_bands()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  return (
+    with bands(band, sort) as (
+      values ('18-24', 1), ('25-34', 2), ('35-44', 3), ('45-54', 4), ('55+', 5)
+    ),
+    players as (
+      select p.profile_id, pp.birthday
+      from public.profile p
+      left join public.profile_private pp on pp.profile_id = p.profile_id
+      where p.auth_uid is not null
+    ),
+    counted as (
+      select b.band, b.sort,
+             count(pl.profile_id) filter (where public.age_band(pl.birthday) = b.band)::int as n
+      from bands b left join players pl on true
+      group by b.band, b.sort
+    )
+    select jsonb_build_object(
+      'generated_at', now(),
+      'players',      (select count(*)::int from players),
+      'no_birthday',  (select count(*)::int from players where birthday is null),
+      'bands',        (select jsonb_agg(jsonb_build_object('band', band, 'players', n) order by sort)
+                       from counted)
+    )
+  );
+end;
+$$;
+
+revoke all on function public.age_bands() from public, anon;
+grant execute on function public.age_bands() to authenticated;
