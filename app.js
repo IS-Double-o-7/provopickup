@@ -55,6 +55,7 @@ const ICON = (() => {
     courts: s('<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>'),
     calendar: s('<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
     challenge: s('<path d="M13 2 4.5 13.5H11L10 22l9-12h-6.5z"/>'),
+    admin: s('<path d="M12 3.2 19 6v5.4c0 4.3-2.9 7.6-7 9.4-4.1-1.8-7-5.1-7-9.4V6z"/><path d="M9.3 12.1l1.9 1.9 3.5-3.6"/>'),
     stats: s('<path d="M5 20v-8M12 20V4M19 20v-5"/>'),
     more: s('<circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/>'),
     plus: s('<path d="M12 5v14M5 12h14"/>'),
@@ -615,7 +616,7 @@ const api = {
     const { data, error } = await db.rpc('is_admin');
     return !error && data === true;
   },
-  // Players per age band (migration 016, admin-only). Resolves to { error } instead of throwing.
+  // Players per age band (migration 017, admin-only). Resolves to { error } instead of throwing.
   async ageBands() {
     const { data, error } = await db.rpc('age_bands');
     return error ? { error } : { data };
@@ -877,7 +878,7 @@ const brandSVG = `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy
    ===================================================================== */
 const ROUTES = [
   ['home', 'Home', ICON.home], ['play', 'Play', ICON.play], ['messages', 'Messages', ICON.messages], ['courts', 'Courts', ICON.courts],
-  ['calendar', 'Calendar', ICON.calendar], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats], ['admin', 'Admin', ICON.stats],
+  ['calendar', 'Calendar', ICON.calendar], ['challenge', 'Challenge', ICON.challenge], ['stats', 'Stats', ICON.stats], ['admin', 'Admin', ICON.admin],
 ];
 const MORE = ['courts', 'challenge', 'stats', 'admin'];
 // The Admin tab exists only for people on the database allow-list (is_admin()). Hiding
@@ -916,7 +917,7 @@ function go(route) {
   window.scrollTo({ top: 0 });
 }
 async function render() {
-  try { await V[ui.route](); } catch (err) { console.error(err); view(ui.route).innerHTML = `<div class="card empty"><h3>Something went wrong loading this screen.</h3><p class="muted">${esc(err.message)}</p><button class="btn" data-route="home">Go home</button></div>`; }
+  try { await V[ui.route](); } catch (err) { console.error(err); view(ui.route).innerHTML = `<div class="card empty"><h2>Something went wrong loading this screen.</h2><p class="muted">${esc(err.message)}</p><button class="btn" data-route="home">Go home</button></div>`; }
   updateBadges();
 }
 
@@ -941,7 +942,7 @@ V.home = async () => {
       <button class="btn" data-action="add-game">${ICON.plus} Plan a game</button>
     </header>
     <div class="home-top">
-      ${next ? nextGameCard(next) : `<article class="card empty"><h3>No games on the calendar</h3><p class="muted">Pick a court and a time, then invite one of your matches.</p><button class="btn" data-action="add-game">Plan a game</button></article>`}
+      ${next ? nextGameCard(next) : `<article class="card empty"><h2>No games on the calendar</h2><p class="muted">Pick a court and a time, then invite one of your matches.</p><button class="btn" data-action="add-game">Plan a game</button></article>`}
       <article class="card chal-mini">
         <div class="between"><p class="eyebrow" style="margin:0">Today’s challenge</p><span class="pill ball">+${ch.today.xp} XP</span></div>
         <h3>${esc(ch.today.title)}</h3>
@@ -963,7 +964,7 @@ function nextGameCard(g) {
   const p = g.with[0] ? person(g.with[0]) : null;
   return `<article class="next"><div class="art">${courtSVG(g.sport)}</div><div class="shade"></div>
     <p class="eyebrow">Next game · ${relDay(g.date)}</p>
-    <h3>${esc(sport(g.sport).name)} at ${esc(place(g.place).name)}</h3>
+    <h2>${esc(sport(g.sport).name)} at ${esc(place(g.place).name)}</h2>
     <p>${fmtDay(g.date)} · ${fmtTime(g.time)}${p ? ' · with ' + esc(p.name) : ''}${g.note ? ' · ' + esc(g.note) : ''}</p>
     <div class="row"><button class="btn ball sm" data-route="calendar">Open calendar</button>${p ? `<button class="btn glass sm" data-action="open-conv-with" data-id="${p.id}">Message ${esc(p.name.split(' ')[0])}</button>` : ''}</div></article>`;
 }
@@ -1340,7 +1341,7 @@ V.stats = async () => {
     </div>
     <div class="stats-grid">
       <article class="card">
-        <div class="between"><div><p class="eyebrow" style="margin-bottom:4px">Activity</p><h3>${d.title}</h3></div><span class="pill">${plural(d.games, 'game')}</span></div>
+        <div class="between"><div><p class="eyebrow" style="margin-bottom:4px">Activity</p><h2>${d.title}</h2></div><span class="pill">${plural(d.games, 'game')}</span></div>
         <div class="chart" role="img" aria-label="Games per period: ${d.buckets.map(b => b.label + ' ' + b.value).join(', ')}">${d.buckets.map(b => `<div class="bar-col"><span>${b.value || ''}</span><div class="bar-track"><i class="bar ${b.value ? '' : 'zero'} ${b.now ? 'now' : ''}" style="height:${b.value / max * 100}%"></i></div></div>`).join('')}</div>
         <div class="bar-labels">${d.buckets.map(b => `<small>${esc(b.label)}</small>`).join('')}</div>
         <p class="muted small" style="margin-top:10px">Games played · ${esc(d.label)} · yellow bar is the current period</p>
@@ -1383,7 +1384,7 @@ function ageCard(res) {
   if (!a || !Array.isArray(a.bands)) return '';
   const total = a.players || 0, max = Math.max(1, ...a.bands.map(b => b.players));
   return `<article class="card block" aria-labelledby="age-title">
-    <p class="eyebrow" style="margin-bottom:4px">Who is playing</p><h3 id="age-title">Players by age</h3>
+    <p class="eyebrow" style="margin-bottom:4px">Who is playing</p><h2 id="age-title">Players by age</h2>
     <div style="margin-top:8px">${a.bands.map(b => `<div class="age-row"><div class="between"><strong>${esc(b.band)}</strong><span class="muted small tnum">${plural(b.players, 'player')}</span></div><div class="meter admin-meter" role="img" aria-label="${esc(b.band)}: ${plural(b.players, 'player')}"><i style="width:${Math.round(b.players / max * 100)}%"></i></div></div>`).join('')}</div>
     <small class="admin-note muted">${a.no_birthday ? `${plural(a.no_birthday, 'player')} of ${total} ${a.no_birthday === 1 ? 'has' : 'have'} not added a birthday yet. ` : ''}Source: profile_private (counts only).</small>
   </article>`;
@@ -1399,7 +1400,7 @@ V.admin = async () => {
     <button class="btn ghost" data-action="admin-refresh">Refresh</button></header>`;
   if (error || !d) {
     console.error(error);
-    view('admin').innerHTML = head + `<div class="card empty"><h3>Numbers are not available</h3><p class="muted">This page needs the latest database update, or you are offline. Nothing else is affected.</p></div>`;
+    view('admin').innerHTML = head + `<div class="card empty"><h2>Numbers are not available</h2><p class="muted">This page needs the latest database update, or you are offline. Nothing else is affected.</p></div>`;
     keepFocus();
     return;
   }

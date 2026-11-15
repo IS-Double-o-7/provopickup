@@ -1,4 +1,4 @@
--- 017: OKR dashboard, second version. Replaces okr_dashboard() from migration 012.
+-- 018: OKR dashboard, second version. Replaces okr_dashboard() from migration 012.
 --
 -- Why a new migration instead of editing 012: 012 is already applied to the live
 -- project, so changing the file would leave the repo and the database disagreeing.
