@@ -318,27 +318,59 @@ create policy "write own choices" on choice for all to authenticated
 -- reads are open on purpose pending the product decision in #21 and #41.
 create policy "read event" on event for select to anon, authenticated using (true);
 
-create policy "book event" on event for insert to authenticated
-  with check (true);
+-- 019: writes are owner-scoped. Reads above are still open, pending #21 / #41.
+create policy "book own event" on event for insert to authenticated
+  with check (host_id = public.current_profile_id());
 
-create policy "cancel event" on event for delete to authenticated
-  using (true);
--- 016: after a game is played, players can record its result (score, people met, note only).
+create policy "cancel own event" on event for delete to authenticated
+  using (host_id = public.current_profile_id());
+
+-- 016 added results; 019 narrowed them from "any signed-in player" to the people
+-- who actually played. SECURITY DEFINER so the policy can read event_attendee
+-- without that table's own policy being consulted from inside this one.
+create or replace function public.plays_in_event(e uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.event_attendee a
+     where a.event_id = e
+       and a.profile_id = public.current_profile_id()
+  );
+$$;
+revoke all on function public.plays_in_event(uuid) from public, anon;
+grant execute on function public.plays_in_event(uuid) to authenticated;
+
 create policy "report played event" on event for update to authenticated
-  using (event_date <= current_date) with check (event_date <= current_date);
+  using (event_date <= current_date
+         and (host_id = public.current_profile_id() or public.plays_in_event(event_id)))
+  with check (event_date <= current_date
+         and (host_id = public.current_profile_id() or public.plays_in_event(event_id)));
 revoke update on event from authenticated;
 grant update (score, new_people_met, note) on event to authenticated;
 
--- No UPDATE policy, so a booked game cannot be edited in place. Nothing in the app
--- updates one; reschedule would need its own card and its own policy.
+-- A booked game still cannot be rescheduled in place: the column grants above
+-- allow only score, new_people_met and note.
 
 create policy "read attendees" on event_attendee for select to anon, authenticated using (true);
 
-create policy "add attendees" on event_attendee for insert to authenticated
-  with check (true);
+-- 019: only the host manages the roster of their own game.
+create policy "add attendee to own game" on event_attendee for insert to authenticated
+  with check (exists (
+    select 1 from public.event e
+     where e.event_id = event_attendee.event_id
+       and e.host_id  = public.current_profile_id()
+  ));
 
-create policy "remove attendees" on event_attendee for delete to authenticated
-  using (true);
+create policy "remove attendee from own game" on event_attendee for delete to authenticated
+  using (exists (
+    select 1 from public.event e
+     where e.event_id = event_attendee.event_id
+       and e.host_id  = public.current_profile_id()
+  ));
 
 -- Second layer, so the block does not rest on policy evaluation alone.
 revoke insert, update, delete on event          from anon;
