@@ -73,7 +73,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Not complete | Front end done; needs migration 016 (adds `event.score` and an update rule limited to played games and those three fields) applied in Supabase |
 | C5 | The Rally Provo logo takes a signed-in player to Home | Complete | Logo in the sidebar and the phone top bar is a link to Home; tested on desktop and mobile |
 | X1 | Message a match (chat saved in the database) | Complete | #39: messages saved in Postgres, only to mutual matches, unread badge clears when read; two-player test passed |
-| X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list |
+| X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list. #69 adds the map itself: a pin per court drawn from `venue.latitude` / `longitude`, filtered by the same sport chips as the list, with a popup that opens that court's details. #53 lets a signed-in player add a court, geocoded from a typed address |
 | X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules (contrast with tinted backgrounds, labels, names, landmarks, headings, ARIA) finds no issues on Log in, Sign up, Profile setup, Your profile, Play, Messages, Calendar and Courts in light and dark mode after the Courts label fix; Home still has a heading-order note |
 | X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Challenge and Stats not checked yet |
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
@@ -97,9 +97,13 @@ carries. The source is `docs/architecture.svg`.
   own database (RDS), hosted on AWS.
 - **Where the apps connect (proposed):** the admin server reads reports and player
   accounts from Supabase and can hide or restore profiles, using a server-only key.
-- **External services:** jsDelivr and Google Fonts (code library and fonts),
-  Supabase's email sender (confirmation link), and OpenStreetMap's Nominatim
-  geocoder are live. Nominatim turns the address typed into "Add a court" into
+- **External services:** jsDelivr, cdnjs and Google Fonts (code libraries and
+  fonts), Supabase's email sender (confirmation link), and OpenStreetMap — both
+  its Nominatim geocoder and its map tiles — are live. **The Courts map is
+  Leaflet 1.9.4 with OpenStreetMap tiles. There is no Google Maps key and none
+  is needed: no API key, no account, no billing and no quota to manage.** The
+  map needs no configuration — it works from a clean clone. If the tiles cannot
+  be reached the map says so and the court list carries on working. Nominatim turns the address typed into "Add a court" into
   map coordinates; it is free, needs no key, and was approved by the Product
   Owner on PR #53. It is called only when a player submits the form, which keeps
   us inside Nominatim's usage policy of about one request a second. The AI workflow is planned: a

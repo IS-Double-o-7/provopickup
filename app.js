@@ -1134,7 +1134,7 @@ V.courts = async () => {
       <p class="sub">Where people are playing. Open a spot to see who plays there and plan a game.</p></div>
       <button class="btn" data-action="add-court">${ICON.plus} Add a court</button></header>
     ${sportChips('place-filter', sf, SPORTS.map(s => s.id).filter(id => used.includes(id)))}
-    <div class="courts-map" id="courtsMap" role="application" aria-label="Map of courts around Provo" hidden></div>
+    <div class="courts-map" id="courtsMap" role="application" aria-label="Map of courts around Provo"><p class="map-status" id="mapStatus" role="status">Loading the map…</p></div>
     <div class="places block">${list.map(pl => placeCard(pl, upcoming)).join('') || `<div class="card empty"><h3>No spots for this sport yet</h3></div>`}</div>`;
   drawCourtsMap(list);
 };
@@ -1147,23 +1147,51 @@ V.courts = async () => {
    V.courts replaces the whole view with innerHTML, so the old Leaflet instance has to
    be torn down first or it leaves handlers bound to a container that no longer exists. */
 let courtsMap = null;
+// One place to say what the map is doing. The element sits on top of the map rather
+// than replacing it, because Leaflet measures its container when it starts and sizes
+// the tiles wrong if that container was display:none at the time.
+function mapStatus(text, kind) {
+  const el = $('#mapStatus');
+  if (!el) return;
+  el.textContent = text || '';
+  el.hidden = !text;
+  el.dataset.kind = kind || 'info';
+}
 function drawCourtsMap(list) {
   const el = $('#courtsMap');
   if (!el) return;
   if (courtsMap) { courtsMap.remove(); courtsMap = null; }
-  // If the CDN is blocked the page still works; it just shows the list without a map.
-  if (typeof L === 'undefined') { el.hidden = true; return; }
+
+  // If the CDN is blocked or the script failed, say so instead of leaving a grey box.
+  if (typeof L === 'undefined') {
+    mapStatus('The map could not load. The court list below still works.', 'warn');
+    return;
+  }
   const pins = list.filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-  if (!pins.length) { el.hidden = true; return; }
-  el.hidden = false;
+  if (!pins.length) {
+    mapStatus(list.length ? 'No court in this sport has a location saved yet.' : 'No courts to show on the map yet.', 'info');
+    return;
+  }
+
+  mapStatus('Loading the map…', 'info');
   try {
     courtsMap = L.map(el, { scrollWheelZoom: false });
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(courtsMap);
+    });
+    // Clear the "Loading" line as soon as the first screenful of tiles is in. If the
+    // tile server is unreachable the load event never fires, so fall back on a timer
+    // and tell the player the pins are still right.
+    let settled = false;
+    const settle = (text, kind) => { if (settled) return; settled = true; clearTimeout(timer); mapStatus(text, kind); };
+    const timer = setTimeout(() => settle('The map images are slow to load. The pins and the list below are still correct.', 'warn'), 8000);
+    tiles.on('load', () => settle('', 'info'));
+    tiles.on('tileerror', () => settle('Map images could not be loaded. The pins and the list below are still correct.', 'warn'));
+    tiles.addTo(courtsMap);
+
     pins.forEach(p => {
       const colour = (ART[p.sports[0]] || [])[0] || 'var(--court)';
-      const where = [p.setting, p.count ? `${p.count} ${p.unit}` : ''].filter(Boolean).join(' · ');
+      const where = [p.setting, p.count ? `${p.count} ${p.unit}` : '', p.mi ? `${p.mi} mi away` : ''].filter(Boolean).join(' · ');
       L.marker([p.lat, p.lng], {
         title: p.name, alt: p.name, keyboard: true,
         icon: L.divIcon({ className: 'court-pin', html: `<span style="background:${esc(colour)}"></span>`, iconSize: [18, 18], iconAnchor: [9, 9] }),
@@ -1175,10 +1203,11 @@ function drawCourtsMap(list) {
     courtsMap.fitBounds(pins.map(p => [p.lat, p.lng]), { padding: [26, 26], maxZoom: 14 });
   } catch (error) {
     console.error('Could not draw the courts map', error);
-    el.hidden = true;
-    courtsMap = null;
+    if (courtsMap) { try { courtsMap.remove(); } catch (e) { /* already gone */ } courtsMap = null; }
+    mapStatus('The map could not be drawn. The court list below still works.', 'warn');
   }
 }
+
 function placeCard(pl, upcoming) {
   const open = ui.openPlace === pl.id;
   const tone = /Busy/.test(pl.busy) ? 'clay' : /Steady/.test(pl.busy) ? 'warn' : 'good';
