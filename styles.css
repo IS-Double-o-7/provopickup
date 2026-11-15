@@ -258,6 +258,12 @@ section.sec{margin-top:36px}
    the sheet (55) and the bottom nav (40). */
 .courts-map{position:relative;z-index:0;height:300px;margin-top:14px;border-radius:16px;overflow:hidden;border:1.5px solid var(--line);background:var(--surface-2)}
 .courts-map[hidden]{display:none}
+/* Status line for the map: loading, nothing to show, or the tiles failed. It sits
+   over the map rather than replacing it — Leaflet measures its container on startup
+   and sizes the tiles wrong if that container was display:none at the time. */
+.map-status{position:absolute;inset:0;z-index:500;display:grid;place-items:center;margin:0;padding:0 20px;text-align:center;font-size:14px;font-weight:600;color:var(--muted);background:var(--surface-2)}
+.map-status[hidden]{display:none}
+.map-status[data-kind="warn"]{color:var(--fg);background:var(--surface-2)}
 .court-pin span{display:block;width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(8,18,24,.45)}
 .leaflet-container{font:500 13px/1.4 var(--f-body);background:var(--surface-2)}
 .leaflet-popup-content{margin:10px 12px;text-align:center}
