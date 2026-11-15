@@ -68,20 +68,56 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | # | Requirement | Status | Evidence |
 |---|---|---|---|
 | C1 | Book, view and cancel a game on the Calendar, saved in Postgres | Complete | Calendar vertical slice (#1) |
-| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Not complete | Front end done (#66, Kyle's #42 brought up to date): games are hosted by the signed-in player and each player sees only games they planned or were invited to; tested with 3 accounts. Still needed: Jordan's owner-only database rule (migration 010's policies, re-applied) so other players are refused by the database too, not only hidden |
+| C2 | Games belong to the signed-in player (a new account starts with an empty calendar) | Complete | Front end in #66; migration 019 applied to the live project on 2026-11-15 so the database refuses other players too, not only the screen. Re-tested as a signed-in player: booking, adding both players and logging a past game all work; another player cancelling is refused (0 rows) and claiming someone else as host is refused (`42501`) |
 | C3 | New games can only be scheduled for a future date and time (up to a year ahead) | Complete | #55: picker limits plus a save check in local time; tested yesterday, earlier today and 400 days out (all refused) and tomorrow (saved) |
-| C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Not complete | Front end done; needs migration 016 (adds `event.score` and an update rule limited to played games and those three fields) applied in Supabase |
+| C4 | After a game's start time, players can add or edit its result: score, new people met, a short note | Complete | Front end in #65; migration 016 applied to the live project. The update rule is limited to played games and to those three columns, with column-level grants under it |
 | C5 | The Rally Provo logo takes a signed-in player to Home | Complete | Logo in the sidebar and the phone top bar is a link to Home; tested on desktop and mobile |
 | X1 | Message a match (chat saved in the database) | Complete | #39: messages saved in Postgres, only to mutual matches, unread badge clears when read; two-player test passed |
 | X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list. #69 adds the map itself: a pin per court drawn from `venue.latitude` / `longitude`, filtered by the same sport chips as the list, with a popup that opens that court's details. #53 lets a signed-in player add a court, geocoded from a typed address |
-| X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | No official Lighthouse run yet. An automated check of the same rules (contrast with tinted backgrounds, labels, names, landmarks, headings, ARIA) finds no issues on Log in, Sign up, Profile setup, Your profile, Play, Messages, Calendar and Courts in light and dark mode after the Courts label fix; Home still has a heading-order note |
+| X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | **No official Lighthouse run yet** -- it needs Chrome's profiler on a signed-in page. An automated check of the same axe rules across all eight pages, light and dark, now finds nothing: labels, control names, alt text, landmarks, `lang`, viewport, duplicate ids, tab order, list structure and colour contrast all pass. The heading-order skips on Home, Stats and Admin were the last rule still failing and were fixed in #51 |
 | X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Challenge and Stats not checked yet |
 | X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
-| X6 | The four Key Results update automatically from user activity | Not complete | Not started |
-| X7 | Admin portal | Not complete | Not started |
+| X6 | The four Key Results update automatically from user activity | Complete | `okr_dashboard()` (migrations 012 and 018) computes all four from live rows and is admin-only; the Admin page shows them and refreshes every 30 seconds (#51). Nothing is stored or hand-entered. See **OKR tracking** below for each formula and its source table |
+| X7 | Admin portal | Partly complete | The admin **page** is live (#51): an allow-list in `admin_user`, enforced by `is_admin()` in the database rather than by hiding the tab, showing the four Key Results and players by age band (counts only -- no birthdays, names or phone numbers). **Moderation is not built:** reading reports and removing a player, which the Trello card asks for, do not exist |
 | X8 | The site is live at a real URL anyone can open | Complete | <https://rallyprovo.com/>; redeploys on every merge to `main` |
 
 ---
+
+## OKR tracking
+
+The four Key Results the team set at Sprint 1 planning are **computed from live rows
+every time the Admin page loads**, and the page refreshes itself every 30 seconds.
+Nothing is stored, cached or typed in by hand -- there is no table of saved figures to
+go stale, so a number can only change by someone using the app.
+
+One database function does all four: `public.okr_dashboard()`, added in migration 012
+and revised in migration 018. It is `security definer` with `set search_path = ''`,
+raises `42501` unless `is_admin()` passes, and **returns counts only** -- never a
+birthday, name, phone number or any other personal field. `execute` is revoked from
+`public` and `anon`.
+
+Only real accounts count: a profile is included only when its `auth_uid` is set, so the
+seeded demo profiles never inflate a figure. "Last 7 days" is a rolling window in Provo
+time (`America/Denver`).
+
+| # | Key Result | Tables it reads | Formula |
+|---|---|---|---|
+| 1 | Share of players with a complete profile | `profile`, `profile_private`, `photo` | players with a non-blank `name`, a `birthday`, and at least one `photo` row whose `photo_file` is non-blank ÷ all players |
+| 2 | Share of players who played in the last 7 days | `event`, `event_attendee` | **distinct** `event_attendee.profile_id` on events whose `event_date` falls in the last 7 days ÷ all players. Distinct players, not attendance rows -- one game with two players used to report 2 |
+| 3 | Mutual matches made in the last 7 days | `choice` | pairs where both directions have `yes = true`, dated by `greatest()` of the two `created_at` values, counted when that date is inside the window. `greatest()` ignores NULLs, so a pair with one old NULL and one recent like dates from the recent one -- which is right, because every NULL predates migration 012 |
+| 4 | Share of matched pairs who have messaged | `choice`, `messages` | matched pairs with at least one `messages` row in either direction ÷ all matched pairs |
+
+A game played today counts from tomorrow, because the window is whole days, so Key
+Result 2 trails real activity by up to a day.
+
+**What the figures mean when they read low.** They are honest counts, not targets. If
+most players have not added a birthday or a photo, Key Result 1 says so. The
+requirement these satisfy is that each number moves on its own when somebody uses the
+app -- not that it reaches 100%.
+
+**Players by age** on the same page comes from `age_bands()` (migration 017), which is
+also admin-only and also counts only. Rally Provo is 18+, enforced by a trigger on
+`profile_private`, so there is no under-18 band.
 
 ## System Architecture
 
@@ -93,10 +129,15 @@ carries. The source is `docs/architecture.svg`.
 - **Customer-facing app (live):** a static HTML/CSS/JavaScript web app hosted on GitHub
   Pages, using Supabase for logins (Auth), data (Postgres with row-level security) and
   profile photos (Storage).
-- **Admin portal (planned):** admin pages (HTML/CSS) and an Express/Node server with its
-  own database (RDS), hosted on AWS.
-- **Where the apps connect (proposed):** the admin server reads reports and player
-  accounts from Supabase and can hide or restore profiles, using a server-only key.
+- **Admin page (live):** a page inside the same app, not a separate portal. Access is an
+  allow-list table (`admin_user`) checked by `is_admin()` in the database, so hiding the
+  tab is a convenience and never the protection. It shows the four Key Results and
+  players by age band, both through `security definer` functions that return counts
+  only. No service-role key is involved and none is in browser code.
+- **Moderation (planned):** reading reports and hiding or restoring a player. Not built.
+  The earlier plan for a separate Express/Node server on AWS with its own database was
+  not adopted; if moderation is built it belongs in this page, behind the same
+  allow-list.
 - **External services:** jsDelivr, cdnjs and Google Fonts (code libraries and
   fonts), Supabase's email sender (confirmation link), and OpenStreetMap — both
   its Nominatim geocoder and its map tiles — are live. **The Courts map is
@@ -400,9 +441,12 @@ Postgres (and the toast's **Undo** puts it back).
 | **Accounts, sign-in and sign-out** | **Supabase Auth** |
 | **Profile: name, bio, sports and levels, availability, photo** | **Supabase Postgres and Storage**, one profile per account |
 | **Play: deck, likes, passes, undo, matches** | **Supabase Postgres** (`choice`, `my_matches()`) |
-| **Calendar: book, view and cancel a game** | **Supabase Postgres**, not yet tied to the signed-in account |
-| Stats and streaks | Computed from the same calendar events |
-| Challenges and maps | Still browser `localStorage` or sample data |
+| **Calendar: book, view and cancel a game, log a result** | **Supabase Postgres**, owned by the signed-in account and enforced there (migrations 016 and 019) |
+| **Messages** | **Supabase Postgres** (`messages`), mutual matches only |
+| **Courts and the map** | **Supabase Postgres** (`venue`, `venue_interest`); the map is Leaflet with OpenStreetMap tiles |
+| **Admin page: the four Key Results, players by age** | **Supabase Postgres**, counts only, admin-only (`okr_dashboard()`, `age_bands()`) |
+| Stats and streaks | Computed in the browser from the same calendar events |
+| Challenges | Still browser `localStorage` |
 
 See **Behavioral Requirements** above for what has been checked end to end.
 
