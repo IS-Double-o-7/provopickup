@@ -1134,8 +1134,51 @@ V.courts = async () => {
       <p class="sub">Where people are playing. Open a spot to see who plays there and plan a game.</p></div>
       <button class="btn" data-action="add-court">${ICON.plus} Add a court</button></header>
     ${sportChips('place-filter', sf, SPORTS.map(s => s.id).filter(id => used.includes(id)))}
+    <div class="courts-map" id="courtsMap" role="application" aria-label="Map of courts around Provo" hidden></div>
     <div class="places block">${list.map(pl => placeCard(pl, upcoming)).join('') || `<div class="card empty"><h3>No spots for this sport yet</h3></div>`}</div>`;
+  drawCourtsMap(list);
 };
+
+/* ---- Courts map ----
+   OpenStreetMap tiles through Leaflet: free, no API key, no account, and the same
+   source the Add-a-court form already geocodes against. The pins are plain divIcons
+   rather than Leaflet's default images, because those load from a path relative to
+   the stylesheet and break when the CSS comes from a CDN.
+   V.courts replaces the whole view with innerHTML, so the old Leaflet instance has to
+   be torn down first or it leaves handlers bound to a container that no longer exists. */
+let courtsMap = null;
+function drawCourtsMap(list) {
+  const el = $('#courtsMap');
+  if (!el) return;
+  if (courtsMap) { courtsMap.remove(); courtsMap = null; }
+  // If the CDN is blocked the page still works; it just shows the list without a map.
+  if (typeof L === 'undefined') { el.hidden = true; return; }
+  const pins = list.filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (!pins.length) { el.hidden = true; return; }
+  el.hidden = false;
+  try {
+    courtsMap = L.map(el, { scrollWheelZoom: false });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(courtsMap);
+    pins.forEach(p => {
+      const colour = (ART[p.sports[0]] || [])[0] || 'var(--court)';
+      const where = [p.setting, p.count ? `${p.count} ${p.unit}` : ''].filter(Boolean).join(' · ');
+      L.marker([p.lat, p.lng], {
+        title: p.name, alt: p.name, keyboard: true,
+        icon: L.divIcon({ className: 'court-pin', html: `<span style="background:${esc(colour)}"></span>`, iconSize: [18, 18], iconAnchor: [9, 9] }),
+      }).addTo(courtsMap).bindPopup(
+        `<strong>${esc(p.name)}</strong><br><small>${esc(p.sports.map(s => sport(s).name).join(' · '))}</small>` +
+        (where ? `<br><small>${esc(where)}</small>` : '') +
+        `<br><button type="button" class="btn sm" data-action="toggle-place" data-id="${esc(p.id)}">Details</button>`);
+    });
+    courtsMap.fitBounds(pins.map(p => [p.lat, p.lng]), { padding: [26, 26], maxZoom: 14 });
+  } catch (error) {
+    console.error('Could not draw the courts map', error);
+    el.hidden = true;
+    courtsMap = null;
+  }
+}
 function placeCard(pl, upcoming) {
   const open = ui.openPlace === pl.id;
   const tone = /Busy/.test(pl.busy) ? 'clay' : /Steady/.test(pl.busy) ? 'warn' : 'good';
