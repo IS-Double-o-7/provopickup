@@ -135,7 +135,7 @@ section.sec{margin-top:36px}
 .home-top{display:grid;grid-template-columns:1.35fr 1fr;gap:16px}
 .next{position:relative;isolation:isolate;overflow:hidden;min-height:220px;border-radius:20px;padding:22px;color:#fff;display:flex;flex-direction:column;justify-content:flex-end;gap:8px}
 .next .eyebrow{color:rgba(255,255,255,.75)}
-.next h3{font:800 34px/.95 var(--f-display);text-transform:uppercase}
+.next h2{font:800 34px/.95 var(--f-display);text-transform:uppercase}
 .next p{color:rgba(255,255,255,.85)}
 .next .row{margin-top:6px}
 .chal-mini{display:flex;flex-direction:column;gap:10px}
@@ -508,3 +508,12 @@ img.avatar{padding:0}
 #courtForm fieldset.field{border:0;padding:0;margin:0}
 #courtForm legend{font-size:13px;font-weight:700;padding:0;margin-bottom:6px}
 .check-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 14px}
+.admin-tiles .tile{display:flex;flex-direction:column;gap:6px}
+.admin-meter{grid-column:auto;height:8px;margin-top:4px}
+.admin-note{font-weight:500;line-height:1.35}
+.age-row{margin-top:12px}.age-row .meter{grid-column:auto;margin-top:6px}
+
+/* Heading order: these headings sit directly under their page's h1, so they must be
+   h2 or Lighthouse reports a skipped level. They still read as card titles, so they
+   keep the h3 size -- the same trick as `.empty h2` above. */
+.stats-grid .card h2,#age-title{font:700 17px/1.3 var(--f-body);text-transform:none;letter-spacing:normal}
