@@ -6,3 +6,7 @@ node_modules/
 
 # local README preview helper, not part of the project
 _readme-preview.html
+
+# Supabase CLI scratch (project ref, version caches). Regenerated on demand;
+# some CLI versions also cache a pooler URL containing the database password.
+supabase/.temp/
