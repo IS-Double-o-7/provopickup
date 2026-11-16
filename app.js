@@ -297,6 +297,8 @@ const rowToGame = (r, me = ME) => ({
   date: r.event_date, time: String(r.event_time).slice(0, 5),
   with: (r.event_attendee || []).map(a => a.profile_id).filter(p => p !== me),
   met: r.new_people_met || 0, note: r.note || '', score: r.score || '',
+  // True once THIS player has confirmed they played (event_attendee.played_at, migration 020).
+  played: (r.event_attendee || []).some(a => a.profile_id === me && a.played_at),
 });
 // A game is over once its start time has passed (browser local time). Only then can a result be added.
 const gameOver = g => { const t = todayISO(); if (g.date !== t) return g.date < t; const d = new Date(); return g.time <= `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -699,11 +701,20 @@ const api = {
   },
 
   async syncGames() {
-    const cols = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met, event_attendee(profile_id)';
-    // Load with the score column (migration 016); before 016 is applied, retry without it.
+    const base = 'event_id, interest_id, venue_id, event_date, event_time, note, new_people_met';
+    // Load with the score column (migration 016) and the played_at confirmation (migration 020).
+    // Before either is applied the database answers 42703 (unknown column), so retry with less.
     const load = async narrow => {
-      let res = await narrow(db.from('event').select(cols + ', score'));
-      if (res.error && (res.error.code === '42703' || /score/.test(res.error.message || ''))) res = await narrow(db.from('event').select(cols));
+      const attempts = [
+        `${base}, score, event_attendee(profile_id, played_at)`,
+        `${base}, score, event_attendee(profile_id)`,
+        `${base}, event_attendee(profile_id)`,
+      ];
+      let res;
+      for (const cols of attempts) {
+        res = await narrow(db.from('event').select(cols));
+        if (!res.error || !(res.error.code === '42703' || /score|played_at/.test(res.error.message || ''))) break;
+      }
       return res;
     };
     if (!hasLiveAccount()) {
@@ -730,6 +741,30 @@ const api = {
   async games({ from, to } = {}) {
     return S().games.filter(g => (!from || g.date >= from) && (!to || g.date <= to))
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  },
+
+  // "We played": the player confirms (or takes back) that they played this game. Only
+  // confirmed games count toward Key Result 2. The database function enforces that you
+  // can only change your own confirmation, only on a game you are on, and only after it
+  // has started (migration 020), so this is never the only check.
+  async markPlayed(id, played = true) {
+    const g = S().games.find(x => x.id === id);
+    if (!g) throw authError('That game is no longer on your calendar.');
+    if (!gameOver(g)) throw authError('You can confirm a game once it has started.');
+    if (hasLiveAccount()) {
+      const { error } = await db.rpc('set_game_played', { p_event: id, p_played: played });
+      if (error) {
+        const text = `${error.code} ${error.message}`;
+        if (/PGRST202|42883|set_game_played/.test(text) && !/not started|not on this game/.test(text)) {
+          throw authError('Confirming games is not switched on yet. Ask the team to apply migration 020.', error);
+        }
+        if (error.code === '23514') throw authError('You can confirm a game once it has started.', error);
+        if (error.code === '42501') throw authError('Only players on this game can confirm it.', error);
+        throw authError('Could not save that. Please try again.', error);
+      }
+    }
+    g.played = played; store.save();
+    return g;
   },
 
   async addGame(g) {
@@ -794,7 +829,15 @@ const api = {
       await db.from('event').delete().eq('event_id', data.event_id);
       return;
     }
-    g.id = data.event_id; S().games.push(g); store.save();
+    g.id = data.event_id; S().games.push(g);
+    // Deleting the game wiped every played_at on it. Re-confirm ours so the card
+    // does not say Played while the database says otherwise. Other players' lost
+    // confirmations cannot be restored on their behalf.
+    if (g.played) {
+      g.played = false;
+      try { await api.markPlayed(g.id, true); } catch (e) { console.error('Could not re-confirm restored game', e); }
+    }
+    store.save();
   },
 
 
@@ -1136,6 +1179,9 @@ async function renderChat() {
     return sep + `<article class="bubble ${m.kind === 'game' ? 'game' : m.from}"><span>${esc(m.text)}</span>${isoStamp ? `<time datetime="${isoStamp}" aria-label="${label}, ${date.toLocaleString('en-US')}">${messageTime(m.at)}</time>` : ''}</article>`;
   }).join('');
   const shared = p?.sports?.find(([s]) => me.sports[s]);
+  // Games with this match that have started and that you have not confirmed yet.
+  const toConfirm = (await api.games()).filter(g => g.with.includes(c.with) && gameOver(g) && !g.played).reverse().slice(0, 2);
+  const confirmBar = toConfirm.length ? `<div class="played-bar" role="group" aria-label="Confirm games you played">${toConfirm.map(g => `<div class="played-item"><span>Did you play ${esc(sport(g.sport).name)} at ${esc(place(g.place).name)} on ${esc(fmtDay(g.date))}?</span><button class="btn sm" type="button" data-action="game-played" data-id="${g.id}" data-played="1">We played</button></div>`).join('')}</div>` : '';
   const sugg = ['Want to play this week?', me.avail[0] ? `I’m free ${SLOTS[me.avail[0]].toLowerCase()}.` : null, place(p?.court) ? `Meet at ${place(p.court).name}?` : null].filter(Boolean);
   const sports = p?.sports?.map(([s, l]) => `${sport(s).name} · ${l}`).join(', ') || 'Rally Provo match';
   box.innerHTML = `
@@ -1144,6 +1190,7 @@ async function renderChat() {
       ${avatar(p?.name || 'Player', 40)}<div class="grow"><strong>${esc(p?.name || 'Your match')}</strong><small class="muted">${esc(sports)}</small></div>
       <button class="btn ghost sm" data-action="add-game" data-with="${esc(p?.id || '')}" data-sport="${shared ? shared[0] : p?.sports?.[0]?.[0] || ''}">${ICON.calendar} Plan a game</button>
     </div>
+    ${confirmBar}
     <div class="chat-body" id="chatBody" role="log" aria-label="Messages with ${esc(p?.name || 'your match')}" aria-live="polite" aria-relevant="additions text">${bubbles || `<p class="muted chat-start">Say hello to ${esc(p?.name?.split(' ')[0] || 'your match')} and start planning your next game.</p>`}${ui.typing[c.id] ? '<div class="typing" role="status" aria-label="Your match is typing"><i></i><i></i><i></i></div>' : ''}</div>
     <div class="suggest" aria-label="Suggested messages">${sugg.map(t => `<button type="button" class="chip" data-action="suggest" data-text="${esc(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip" data-action="add-game" data-with="${esc(p?.id || '')}">${ICON.calendar.replace('<svg', '<svg width="15" height="15"')} Plan a game</button></div>
     <form class="chat-form" id="chatForm" data-conv="${esc(c.id)}"><label class="sr-only" for="chatInput">Message ${esc(p?.name || 'your match')}</label><input id="chatInput" autocomplete="off" maxlength="500" placeholder="Message ${esc(p?.name?.split(' ')[0] || 'your match')}…" aria-label="Message ${esc(p?.name || 'your match')}"><button class="btn" id="chatSend" aria-label="Send message to ${esc(p?.name || 'your match')}">${ICON.send}</button><span id="chatStatus" class="sr-only" role="status" aria-live="polite"></span></form>`;
@@ -1318,9 +1365,12 @@ V.calendar = async () => {
 };
 function gameRow(g) {
   const names = g.with.map(id => person(id)).filter(Boolean).map(p => p.name);
-  const past = g.date < todayISO();
-  return `<div class="game"><div><b>${fmtTime(g.time)}</b><small class="muted">${past ? 'Played' : relDay(g.date)}</small></div>
-    <div class="min0"><strong>${sport(g.sport).icon} ${esc(sport(g.sport).name)} at ${esc(place(g.place).name)}</strong><small class="muted">${fmtDay(g.date)} · ${names.length ? 'With ' + esc(names.join(', ')) : 'Open game'}${g.note ? ' · ' + esc(g.note) : ''}</small>${g.score || (past && g.met) ? `<small class="game-result">${g.score ? 'Score ' + esc(g.score) : ''}${g.score && g.met ? ' · ' : ''}${g.met ? 'Met ' + plural(g.met, 'new player') : ''}</small>` : ''}${gameOver(g) ? `<button class="btn ghost sm game-result-btn" data-action="game-result" data-id="${g.id}">${g.score || g.met ? 'Edit result' : 'Add result'}</button>` : ''}</div>
+  const past = g.date < todayISO(), over = gameOver(g);
+  const playedBtn = over ? (g.played
+    ? `<button class="btn ghost sm game-played-btn on" type="button" aria-pressed="true" data-action="game-played" data-id="${g.id}" data-played="0">${ICON.check} Played · undo</button>`
+    : `<button class="btn sm game-played-btn" type="button" aria-pressed="false" data-action="game-played" data-id="${g.id}" data-played="1">We played</button>`) : '';
+  return `<div class="game"><div><b>${fmtTime(g.time)}</b><small class="muted">${g.played ? 'Played' : over ? 'Ended' : relDay(g.date)}</small></div>
+    <div class="min0"><strong>${sport(g.sport).icon} ${esc(sport(g.sport).name)} at ${esc(place(g.place).name)}</strong><small class="muted">${fmtDay(g.date)} · ${names.length ? 'With ' + esc(names.join(', ')) : 'Open game'}${g.note ? ' · ' + esc(g.note) : ''}</small>${g.score || (past && g.met) ? `<small class="game-result">${g.score ? 'Score ' + esc(g.score) : ''}${g.score && g.met ? ' · ' : ''}${g.met ? 'Met ' + plural(g.met, 'new player') : ''}</small>` : ''}${over ? `<span class="game-actions">${playedBtn}<button class="btn ghost sm game-result-btn" data-action="game-result" data-id="${g.id}">${g.score || g.met ? 'Edit result' : 'Add result'}</button></span>` : ''}</div>
     <button class="icon-btn sm" data-action="del-game" data-id="${g.id}" aria-label="Remove this game">${ICON.x}</button></div>`;
 }
 
@@ -1407,7 +1457,7 @@ function okrCards(d) {
     { id: 'profile', title: 'Complete profiles', target: '100% of players', unit: '%', value: pct(d.profiles.complete, n), goal: 100,
       formula: `${d.profiles.complete} of ${plural(n, 'player')} have a name, age and photo`, source: 'profile, profile_private, photo' },
     { id: 'games', title: 'Players who played', target: '100% of players, every week', unit: '%', value: pct(d.games.players_played_7d, d.games.players_total), goal: 100,
-      formula: `${d.games.players_played_7d} of ${plural(d.games.players_total, 'player')} played a game in the last 7 days`, source: 'event, event_attendee' },
+      formula: `${d.games.players_played_7d} of ${plural(d.games.players_total, 'player')} confirmed they played a game in the last 7 days`, source: 'event, event_attendee' },
     { id: 'matches', title: 'New matches', target: '2 per player per week', unit: '', value: per(d.matches.made_7d * 2, n), goal: 2,
       formula: `${plural(d.matches.made_7d, 'match', 'matches')} made in the last 7 days (each counts for both players)`, source: 'choice' },
     { id: 'messaged', title: 'Matches that talk', target: '100% of matches', unit: '%', value: pct(d.messaged.pairs_with_message, d.matches.pairs_total), goal: 100,
@@ -1684,6 +1734,20 @@ document.addEventListener('click', async e => {
     case 'suggest': { const i = $('#chatInput'); if (i) { i.value = a.dataset.text; i.focus(); } break; }
 
     case 'game-result': openResultModal(a.dataset.id); break;
+    case 'game-played': {
+      const played = a.dataset.played !== '0';
+      a.disabled = true;
+      try {
+        await api.markPlayed(id, played);
+        toast(played ? 'Marked as played. It now counts toward the weekly goal.' : 'Taken back. It no longer counts as played.');
+        render();
+      } catch (error) {
+        console.error('Could not confirm the game', error);
+        a.disabled = false;
+        toast(error.message || 'Could not save that. Please try again.');
+      }
+      break;
+    }
     case 'add-game': openGameModal({ withId: a.dataset.with, place: a.dataset.place, date: a.dataset.date, sport: a.dataset.sport }); break;
     case 'del-game': { const g = await api.removeGame(id); render(); if (g) toast('Game removed', { label: 'Undo', run: async () => { await api.restoreGame(g); render(); } }); break; }
     case 'cal-prev': case 'cal-next': ui.calMonth = new Date(ui.calMonth.getFullYear(), ui.calMonth.getMonth() + (a.dataset.action === 'cal-next' ? 1 : -1), 1); render(); break;

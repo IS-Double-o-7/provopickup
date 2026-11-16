@@ -103,12 +103,16 @@ time (`America/Denver`).
 | # | Key Result | Tables it reads | Formula |
 |---|---|---|---|
 | 1 | Share of players with a complete profile | `profile`, `profile_private`, `photo` | players with a non-blank `name`, a `birthday`, and at least one `photo` row whose `photo_file` is non-blank ÷ all players |
-| 2 | Share of players who played in the last 7 days | `event`, `event_attendee` | **distinct** `event_attendee.profile_id` on events whose `event_date` falls in the last 7 days ÷ all players. Distinct players, not attendance rows -- one game with two players used to report 2 |
+| 2 | Share of players who played in the last 7 days | `event`, `event_attendee` | **distinct** `event_attendee.profile_id` whose `played_at` is set (the player pressed **We played** after the game started, migration 020) on events whose `event_date` falls in the last 7 days ÷ all players. Booking a game alone does not count. Distinct players, not attendance rows -- one game with two players used to report 2 |
 | 3 | Mutual matches made in the last 7 days | `choice` | pairs where both directions have `yes = true`, dated by `greatest()` of the two `created_at` values, counted when that date is inside the window. `greatest()` ignores NULLs, so a pair with one old NULL and one recent like dates from the recent one -- which is right, because every NULL predates migration 012 |
 | 4 | Share of matched pairs who have messaged | `choice`, `messages` | matched pairs with at least one `messages` row in either direction ÷ all matched pairs |
 
-A game played today counts from tomorrow, because the window is whole days, so Key
-Result 2 trails real activity by up to a day.
+Key Result 2 counts a player only after they confirm: once a game has started, each
+player presses **We played** on the game's card on the Calendar, or in the chat with
+the person they played with. `set_game_played()` is the only way to set that, and it
+lets a player change only their own row, only on a game they are on, and only after the
+start time. A game confirmed today counts today. Games from before migration 020 stay
+unconfirmed until players press the button.
 
 **What the figures mean when they read low.** They are honest counts, not targets. If
 most players have not added a birthday or a photo, Key Result 1 says so. The
