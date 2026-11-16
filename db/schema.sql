@@ -161,6 +161,8 @@ create table event_attendee (
   event_id          uuid not null references event(event_id) on delete cascade,
   profile_id        text not null references profile(profile_id) on delete cascade,
   status            text not null default 'going',
+  -- Set by set_game_played() (migration 020) when the player confirms they played.
+  played_at         timestamptz,
   unique (event_id, profile_id)
 );
 
@@ -279,14 +281,16 @@ begin
                       and btrim(coalesce(ph.photo_file, '')) <> '')
     ),
     played as (
-      -- Distinct players who played in the last 7 days (migration 017).
+      -- Distinct players who CONFIRMED they played a game dated in the last 7 days
+      -- (migrations 017 and 020). Booking alone does not count.
       select count(distinct ea.profile_id)::int as n
       from public.event_attendee ea
       join public.event e on e.event_id = ea.event_id
       join players p on p.profile_id = ea.profile_id
       cross join today t
       where ea.status = 'going'
-        and e.event_date < t.d
+        and ea.played_at is not null
+        and e.event_date <= t.d
         and e.event_date >= t.d - 7
     ),
     pairs as (
@@ -327,6 +331,48 @@ $$;
 
 revoke all on function public.okr_dashboard() from public, anon;
 grant execute on function public.okr_dashboard() to authenticated;
+
+-- A game counts as played only when the player confirms it (migration 020). The
+-- function is the only way to set played_at: a player can change only their own row,
+-- only for a game they are on, and only after its start time (Provo time).
+create or replace function public.set_game_played(p_event uuid, p_played boolean)
+returns timestamptz
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  me text := public.current_profile_id();
+  ts timestamptz;
+begin
+  if me is null then
+    raise exception 'not signed in' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1 from public.event e
+     where e.event_id = p_event
+       and (e.event_date + e.event_time) <= (now() at time zone 'America/Denver')
+  ) then
+    raise exception 'this game has not started yet' using errcode = '23514';
+  end if;
+
+  update public.event_attendee
+     set played_at = case when p_played then now() else null end
+   where event_id = p_event
+     and profile_id = me
+     and status = 'going'
+  returning played_at into ts;
+
+  if not found then
+    raise exception 'you are not on this game' using errcode = '42501';
+  end if;
+  return ts;
+end;
+$$;
+
+revoke all on function public.set_game_played(uuid, boolean) from public, anon;
+grant execute on function public.set_game_played(uuid, boolean) to authenticated;
 
 -- ---- Row-level security ----
 -- RLS is ON for every table. Reference data and the safe profile columns are

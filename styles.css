@@ -524,3 +524,8 @@ img.avatar{padding:0}
    h2 or Lighthouse reports a skipped level. They still read as card titles, so they
    keep the h3 size -- the same trick as `.empty h2` above. */
 .stats-grid .card h2,#age-title{font:700 17px/1.3 var(--f-body);text-transform:none;letter-spacing:normal}
+.game-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.game-actions .btn{margin-top:0}
+.game-played-btn svg{width:16px;height:16px;vertical-align:-3px}
+.played-bar{display:grid;gap:8px;padding:10px 16px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+.played-item{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.played-item span{font-weight:600;min-width:0}
