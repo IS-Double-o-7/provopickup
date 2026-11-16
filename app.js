@@ -469,6 +469,26 @@ const api = {
     }
     store.save(); return { matched: !!conv, conv };
   },
+  async matchStarters(id) {
+    const me = S().profile;
+    const target = person(id);
+    const sharedSports = (target?.sports || []).filter(([sportId]) => me?.sports?.[sportId]);
+    const fallback = sharedSports.length
+      ? [`What do you enjoy most about ${sport(sharedSports[0][0]).name}?`, `Want to plan a casual ${sport(sharedSports[0][0]).name.toLowerCase()} game sometime?`, 'What kind of game are you hoping to play next?']
+      : ['What kind of game are you hoping to play next?', 'What sports are you enjoying lately?', 'Want to plan a casual game sometime?'];
+    if (!hasLiveAccount()) return { suggestions: fallback, source: 'fallback' };
+    try {
+      const { data, error } = await db.functions.invoke('match-starters', { body: { matchedProfileId: id } });
+      if (error) throw error;
+      const suggestions = Array.isArray(data?.suggestions)
+        ? data.suggestions.filter(text => typeof text === 'string' && text.trim()).slice(0, 3)
+        : [];
+      return { suggestions: suggestions.length ? suggestions : fallback, source: data?.source === 'gemini' ? 'gemini' : 'fallback' };
+    } catch (error) {
+      console.warn('AI match starters unavailable; using fallback suggestions.', error);
+      return { suggestions: fallback, source: 'fallback' };
+    }
+  },
   async undoSwipe(id) {
     if (hasLiveAccount()) {
       const { error } = await db.from('choice').delete().eq('swiper', requireProfileId()).eq('swiped_on', id);
@@ -886,6 +906,7 @@ const MORE = ['courts', 'challenge', 'stats', 'admin'];
 const routes = () => ROUTES.filter(r => r[0] !== 'admin' || ui.isAdmin);
 const moreRoutes = () => MORE.filter(r => r !== 'admin' || ui.isAdmin);
 const ui = { route: 'home', conv: null, chatOpen: false, calMonth: null, selDate: todayISO(), openPlace: null, focus: null, swiping: false, typing: {}, resetArmed: false, isAdmin: false };
+let pendingMessageDraft = null;
 const view = r => $('#v-' + r);
 const isWide = () => window.matchMedia('(min-width: 821px)').matches;
 const saveUI = (k, v) => { S().ui[k] = v; store.save(); };
@@ -1059,7 +1080,17 @@ function openMatch(p, conv) {
   openModal(`<div class="match-card"><p class="eyebrow">Mutual like</p><h2>It’s a match</h2>
     <div class="match-avs">${photoAvatar(S().profile.photo, S().profile.name, 76)}${photoAvatar(p.photo, p.name, 76)}</div>
     <p class="muted">You and ${esc(p.name.split(' ')[0])} both want to play.${conv ? ` ${esc(p.name.split(' ')[0])} already sent you a message.` : ''}</p>
+    <section class="match-starters" id="matchStarters" data-player="${esc(p.id)}" aria-labelledby="matchStartersTitle">
+      <h3 id="matchStartersTitle">A little help breaking the ice</h3>
+      <p class="muted small" role="status" aria-live="polite">Thinking of a few personalized openers…</p>
+    </section>
     <div class="row" style="justify-content:center">${conv ? `<button class="btn" data-action="open-conv" data-id="${conv.id}">Reply now</button>` : ''}<button class="btn ghost" data-action="close">Keep browsing</button></div></div>`);
+  const playerId = p.id;
+  api.matchStarters(playerId).then(({ suggestions, source }) => {
+    const section = $('#matchStarters');
+    if (!section || section.dataset.player !== String(playerId)) return;
+    section.innerHTML = `<h3 id="matchStartersTitle">A little help breaking the ice</h3><p class="muted small" role="status" aria-live="polite">${source === 'gemini' ? 'Personalized ideas are ready. Choose one to edit before sending.' : 'Starter ideas are ready. Choose one to edit before sending.'}</p><div class="match-starter-list">${suggestions.map(text => `<button type="button" class="match-starter" data-action="match-starter" data-id="${esc(playerId)}" data-text="${esc(text)}">${esc(text)}</button>`).join('')}</div>`;
+  });
 }
 
 /* ---- Messages ---- */
@@ -1092,7 +1123,9 @@ async function renderChat() {
   const c = ui.conv ? await api.conversation(ui.conv) : null;
   if (!c) { box.innerHTML = `<div class="empty chat-empty"><span class="empty-icon">${ICON.messages}</span><h3>Select a conversation</h3><p class="muted">Choose a match from your inbox to see messages and plan a game together.</p></div>`; return; }
   if (isWide() || ui.chatOpen) { await api.markRead(c.id); updateBadges(); }
-  const p = person(c.with), me = S().profile, draft = $('#chatInput') ? $('#chatInput').value : '';
+  const p = person(c.with), me = S().profile;
+  const draft = pendingMessageDraft?.convId === c.id ? pendingMessageDraft.text : ($('#chatInput') ? $('#chatInput').value : '');
+  if (pendingMessageDraft?.convId === c.id) pendingMessageDraft = null;
   let lastDay = '';
   const messages = Array.isArray(c.messages) ? c.messages : [];
   const bubbles = messages.map(m => {
@@ -1145,7 +1178,11 @@ async function sendMessage(convId, text) {
     if (retryButton) retryButton.disabled = false;
   }
 }
-function openConv(id) { ui.conv = id; ui.chatOpen = true; closeModal(); if (ui.route === 'messages') V.messages(); else go('messages'); }
+function openConv(id, draft) {
+  ui.conv = id; ui.chatOpen = true;
+  if (typeof draft === 'string') pendingMessageDraft = { convId: id, text: draft };
+  closeModal(); if (ui.route === 'messages') V.messages(); else go('messages');
+}
 
 /* ---- Courts ---- */
 V.courts = async () => {
@@ -1642,6 +1679,7 @@ document.addEventListener('click', async e => {
 
     case 'open-conv': openConv(id); break;
     case 'open-conv-with': { const c = s.conversations.find(x => x.with === id); if (c) openConv(c.id); break; }
+    case 'match-starter': openConv('c-' + id, a.dataset.text || ''); break;
     case 'conv-back': ui.chatOpen = false; V.messages(); break;
     case 'suggest': { const i = $('#chatInput'); if (i) { i.value = a.dataset.text; i.focus(); } break; }
 

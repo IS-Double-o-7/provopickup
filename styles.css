@@ -361,6 +361,13 @@ section.sec{margin-top:36px}
 .match-avs{display:flex;align-items:center;margin:8px 0}
 .match-avs .avatar{box-shadow:0 0 0 4px var(--surface)}
 .match-avs .avatar+.avatar{margin-left:-14px}
+.match-starters{width:min(100%,460px);margin:4px 0 8px;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--bg);text-align:left}
+.match-starters h3{margin:0 0 4px;font-size:16px}
+.match-starters>p{margin:0 0 12px}
+.match-starter-list{display:grid;gap:8px}
+.match-starter{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--fg);font:inherit;line-height:1.4;text-align:left;cursor:pointer;transition:border-color .15s,transform .15s}
+.match-starter:hover{border-color:var(--court);transform:translateY(-1px)}
+.match-starter:focus-visible{outline:2px solid var(--court);outline-offset:2px}
 .sheet{position:fixed;inset:0;z-index:55;display:flex;align-items:flex-end;background:rgba(6,12,18,.45)}
 .sheet-card{width:100%;padding:12px 12px calc(16px + env(safe-area-inset-bottom,0px));border-radius:22px 22px 0 0;background:var(--surface)}
 .sheet-card .nav-link{padding:14px 12px;font-size:16px}
