@@ -76,7 +76,7 @@ the code exists. Last reviewed October 30, 2026 against `main` and the live site
 | X2 | Courts and Maps pages read venues from the database | Complete | #39: Courts reads `venue` and `venue_interest` instead of the hardcoded list. #69 adds the map itself: a pin per court drawn from `venue.latitude` / `longitude`, filtered by the same sport chips as the list, with a popup that opens that court's details. #53 lets a signed-in player add a court, geocoded from a typed address |
 | X3 | Every page scores 90+ in Lighthouse Accessibility | Not complete | **No official Lighthouse run yet** -- it needs Chrome's profiler on a signed-in page. An automated check of the same axe rules across all eight pages, light and dark, now finds nothing: labels, control names, alt text, landmarks, `lang`, viewport, duplicate ids, tab order, list structure and colour contrast all pass. The heading-order skips on Home, Stats and Admin were the last rule still failing and were fixed in #51 |
 | X4 | Every page is responsive on desktop and mobile | Not complete | Checked at 8 screen sizes (320 to 1920 wide, plus phone landscape) with no sideways scroll, clipping or undersized buttons: Log in, Sign up, Profile setup, Play, Messages (list and open chat), Calendar (month and Add game form), Courts (list and court details). Home, Challenge and Stats not checked yet |
-| X5 | An AI automation connected to an external service | Not complete | Not started; not yet chosen by the team |
+| X5 | An AI automation connected to an external service | In progress | The `match-starters` Supabase Edge Function verifies mutual matches and can request personalized conversation starters from Gemini. Deploy the function and configure `GEMINI_API_KEY` to enable the external AI call; the app uses fallback suggestions when Gemini is unavailable |
 | X6 | The four Key Results update automatically from user activity | Complete | `okr_dashboard()` (migrations 012 and 018) computes all four from live rows and is admin-only; the Admin page shows them and refreshes every 30 seconds (#51). Nothing is stored or hand-entered. See **OKR tracking** below for each formula and its source table |
 | X7 | Admin portal | Partly complete | The admin **page** is live (#51): an allow-list in `admin_user`, enforced by `is_admin()` in the database rather than by hiding the tab, showing the four Key Results and players by age band (counts only -- no birthdays, names or phone numbers). **Moderation is not built:** reading reports and removing a player, which the Trello card asks for, do not exist |
 | X8 | The site is live at a real URL anyone can open | Complete | <https://rallyprovo.com/>; redeploys on every merge to `main` |
@@ -147,10 +147,14 @@ carries. The source is `docs/architecture.svg`.
   be reached the map says so and the court list carries on working. Nominatim turns the address typed into "Add a court" into
   map coordinates; it is free, needs no key, and was approved by the Product
   Owner on PR #53. It is called only when a player submits the form, which keeps
-  us inside Nominatim's usage policy of about one request a second. The AI workflow is planned: a
-  Supabase Edge Function sends each new game to an AI model API, which writes an invite,
-  and the function posts it to Discord. This is the team's leading candidate, not yet
-  approved.
+  us inside Nominatim's usage policy of about one request a second. On a mutual match, the
+  `match-starters` Supabase Edge Function verifies that the signed-in player and target
+  still have a reciprocal like. It reads only public bios and sport/skill preferences,
+  removes recognizable age, contact and location details from bio text, and asks Gemini
+  for three optional conversation starters. The app shows them as drafts; a player must
+  choose and can edit one before sending through the existing Messages flow. The Gemini
+  key is a Supabase Function secret and never appears in browser code. If Gemini is not
+  configured or returns an error, the app shows non-AI fallback starters.
 
 ---
 
@@ -171,6 +175,41 @@ Lucidchart and is not exported here yet.
 | 4.0 Schedule Games | Book, cancel and restore games | D4 `event` / `event_attendee` |
 | 5.0 Browse Courts | Court search and listings | D5 `venue` |
 | 6.0 Manage Venues | Adding and editing courts (**planned**) | D5 `venue` |
+
+### AI workflow: match conversation starters
+
+This Level 1 process runs only after a mutual like. The Edge Function independently
+checks the authenticated user's match through `current_profile_id()` and `my_matches()`;
+it does not trust a client-supplied match claim. No age, location, contact, photo,
+availability, or account identifier is sent to Gemini. Profile bios are user-written
+and are filtered for recognizable age/location/contact details before use. Suggestions
+are drafts only; choosing one opens Messages with the text in the composer, and the
+player decides whether to edit or send it.
+
+```mermaid
+flowchart LR
+  P[Player] -->|Like| A[Rally Provo app]
+  A -->|Swipe decision| C[(D2 choice)]
+  C -->|Reciprocal likes| M[2.1 Verify mutual match]
+  A -->|Target profile ID + signed-in session| F[2.2 Generate match starters - Supabase Edge Function]
+  F -->|Verify caller and mutual match| M
+  F -->|Read only public profile fields| D[(D1 profile + sport preferences)]
+  D -->|Public bio and shared sports/skill levels| F
+  F -->|Sanitized, minimal profile details| G[Gemini API]
+  G -->|Three short suggestions| F
+  F -->|Validated draft suggestions or fallback| A
+  A -->|Display optional drafts| P
+  P -->|Choose and edit a draft| A
+  A -->|Player-approved message| S[(D3 messages)]
+```
+
+To enable Gemini, set `GEMINI_API_KEY` as a Supabase Edge Function secret, then deploy
+`match-starters` (`supabase functions deploy match-starters`). The optional
+`GEMINI_MODEL` secret selects a supported Gemini model; the default is `gemini-3.8-flash`.
+Without a key, the function returns fallback starters and matching still works.
+Never put the Gemini key in `config.js`, browser code, Git, or chat. Check the current
+[Gemini API pricing and free-tier limits](https://ai.google.dev/gemini-api/docs/pricing)
+before choosing a model; free-tier terms and availability can change.
 
 A DFD shows the designed flow, not what is built today. Right now only **4.0 Schedule
 Games** is backed by the database end to end. Processes 1.0, 2.0, 3.0 and 5.0 run on
@@ -460,6 +499,7 @@ See **Behavioral Requirements** above for what has been checked end to end.
 - `config.example.js` – template for pointing the app at your own Supabase project
 - `auth.js` – the log in / sign up screen; owns the shared Supabase client and holds the app back until someone is signed in
 - `app.js` – data, logic and every screen
+- `supabase/functions/match-starters/index.ts` – authenticated, mutual-match-only Gemini starter generation
 - `db/schema.sql` – the tables from the ERD
 - `db/seed.sql` – sample rows for every table
 - `docs/erd.png` – the ERD above (`docs/erd.svg` is the source, `docs/make_erd.py` regenerates both)
