@@ -499,6 +499,29 @@ const api = {
     }
     delete S().swipes[id]; store.save();
   },
+  /** Unmatch: turn your like into a pass. my_matches() needs two likes, so the match
+   *  disappears for both players at once and neither can send more messages (the
+   *  database only allows messages between mutual matches). Old messages stay in the
+   *  database but are not shown while you are unmatched. Liking them again later
+   *  (Review passed, then undo) brings the match and its history back. */
+  async unmatch(id) {
+    const s = S();
+    if (hasLiveAccount()) {
+      const myId = requireProfileId();
+      if (!id || id === myId) throw authError('Choose a match to unmatch.');
+      const { error } = await db.from('choice').upsert({
+        swiper: myId, swiped_on: id, yes: false, no: true,
+      }, { onConflict: 'swiper,swiped_on' });
+      if (error) throw authError('Could not unmatch. Please try again.', error);
+    } else {
+      s.swipes[id] = 'pass';
+    }
+    // The database write is done, so drop the match locally before the refresh below.
+    s.matches = s.matches.filter(x => x !== id);
+    s.conversations = s.conversations.filter(c => c.with !== id);
+    store.save();
+    if (hasLiveAccount()) await api.syncConversations();
+  },
   /** Permanently delete the signed-in player's account: photos in Storage, then
    *  the profile and login through the delete_my_account() RPC (migration 009). */
   async deleteAccount() {
@@ -571,7 +594,9 @@ const api = {
       });
     }
     const matchIds = (matchesResult.data || []).map(row => row.profile_id);
-    const ids = [...new Set([...matchIds, ...byOther.keys()])];
+    // Only current matches get a conversation. After an unmatch the old messages stay in
+    // the database, but nobody can open or add to that thread.
+    const ids = [...new Set(matchIds)];
     try { await loadPlayersForIds(ids); }
     catch (error) { return { error }; }
     const s = S();
@@ -1061,7 +1086,7 @@ V.play = async () => {
       </div>
       <aside class="stack">
         <div class="card"><h3>Your matches</h3>
-          ${matches.length ? matches.map(p => `<div class="list-row">${photoAvatar(p.photo, p.name, 36)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s]) => sport(s).name).join(' · ')}</small></div>${hasLiveAccount() ? '<span class="pill good">Matched</span>' : `<button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button>`}</div>`).join('') : '<p class="muted small" style="margin-top:6px">Mutual likes show up here.</p>'}
+          ${matches.length ? matches.map(p => `<div class="list-row">${photoAvatar(p.photo, p.name, 36)}<div class="grow"><strong>${esc(p.name)}</strong><small class="muted">${p.sports.map(([s]) => sport(s).name).join(' · ')}</small></div>${hasLiveAccount() ? '<span class="pill good">Matched</span>' : `<button class="btn ghost sm" data-action="open-conv-with" data-id="${p.id}">Message</button>`}<button class="btn danger sm" type="button" data-action="unmatch-start" data-id="${esc(p.id)}" aria-label="Unmatch ${esc(p.name)}">Unmatch</button></div>`).join('') : '<p class="muted small" style="margin-top:6px">Mutual likes show up here.</p>'}
         </div>
         <div class="card"><h3>Likes sent</h3>
           <p class="muted small" style="margin:4px 0 10px">If they like you back, they’ll appear in Your matches.</p>
@@ -1189,6 +1214,7 @@ async function renderChat() {
       <button class="icon-btn back-btn" data-action="conv-back" aria-label="Back to conversations">${ICON.back}</button>
       ${avatar(p?.name || 'Player', 40)}<div class="grow"><strong>${esc(p?.name || 'Your match')}</strong><small class="muted">${esc(sports)}</small></div>
       <button class="btn ghost sm" data-action="add-game" data-with="${esc(p?.id || '')}" data-sport="${shared ? shared[0] : p?.sports?.[0]?.[0] || ''}">${ICON.calendar} Plan a game</button>
+      <button class="btn danger sm" type="button" data-action="unmatch-start" data-id="${esc(c.with)}">Unmatch</button>
     </div>
     ${confirmBar}
     <div class="chat-body" id="chatBody" role="log" aria-label="Messages with ${esc(p?.name || 'your match')}" aria-live="polite" aria-relevant="additions text">${bubbles || `<p class="muted chat-start">Say hello to ${esc(p?.name?.split(' ')[0] || 'your match')} and start planning your next game.</p>`}${ui.typing[c.id] ? '<div class="typing" role="status" aria-label="Your match is typing"><i></i><i></i><i></i></div>' : ''}</div>
@@ -1224,6 +1250,18 @@ async function sendMessage(convId, text) {
     toast('Message could not be sent. Your draft is still here.');  // #chatStatus is screen-reader only; this is the visible notice
     if (retryButton) retryButton.disabled = false;
   }
+}
+// Unmatching is easy to do by accident and the other person cannot be told why, so ask first.
+function openUnmatchModal(id) {
+  const p = person(id), name = p?.name || 'this player';
+  openModal(`${modalHead('Matches', `Unmatch ${esc(name)}?`, 'This takes effect for both of you right away.')}
+    <ul class="unmatch-list">
+      <li>${esc(name.split(' ')[0])} disappears from your matches and your messages.</li>
+      <li>You can no longer message each other, and you will not appear in each other's matches.</li>
+      <li>Old messages are kept but hidden. If you like them again later from Review passed, the match comes back with its history.</li>
+      <li>They are not told that you unmatched.</li>
+    </ul>
+    <div class="row"><button class="btn danger-solid" type="button" data-action="unmatch-confirm" data-id="${esc(id)}">Unmatch</button><button class="btn ghost" type="button" data-action="close">Keep match</button></div>`);
 }
 function openConv(id, draft) {
   ui.conv = id; ui.chatOpen = true;
@@ -1727,6 +1765,23 @@ document.addEventListener('click', async e => {
     }
     case 'reset-passes': try { await api.resetPasses(); render(); } catch (error) { toast(error.message || 'Passed players could not be restored.'); } break;
 
+    case 'unmatch-start': openUnmatchModal(id); break;
+    case 'unmatch-confirm': {
+      const name = person(id)?.name?.split(' ')[0] || 'them';
+      a.disabled = true;
+      try {
+        await api.unmatch(id);
+        closeModal();
+        ui.conv = null; ui.chatOpen = false;
+        render(); updateBadges();
+        toast(`You unmatched ${name}.`);
+      } catch (error) {
+        console.error('Could not unmatch', error);
+        a.disabled = false;
+        toast(error.message || 'Could not unmatch. Please try again.');
+      }
+      break;
+    }
     case 'open-conv': openConv(id); break;
     case 'open-conv-with': { const c = s.conversations.find(x => x.with === id); if (c) openConv(c.id); break; }
     case 'match-starter': openConv('c-' + id, a.dataset.text || ''); break;
