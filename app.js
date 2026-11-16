@@ -829,7 +829,15 @@ const api = {
       await db.from('event').delete().eq('event_id', data.event_id);
       return;
     }
-    g.id = data.event_id; S().games.push(g); store.save();
+    g.id = data.event_id; S().games.push(g);
+    // Deleting the game wiped every played_at on it. Re-confirm ours so the card
+    // does not say Played while the database says otherwise. Other players' lost
+    // confirmations cannot be restored on their behalf.
+    if (g.played) {
+      g.played = false;
+      try { await api.markPlayed(g.id, true); } catch (e) { console.error('Could not re-confirm restored game', e); }
+    }
+    store.save();
   },
 
 

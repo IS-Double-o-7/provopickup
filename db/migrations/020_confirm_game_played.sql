@@ -45,7 +45,9 @@ begin
      set played_at = case when p_played then now() else null end
    where event_id = p_event
      and profile_id = me
-     and status = 'going'
+     -- 'played' too: the app books games dated before today as 'played', and
+     -- restoring a removed past game does the same. Both mean "on this game".
+     and status in ('going', 'played')
   returning played_at into ts;
 
   if not found then
@@ -96,10 +98,10 @@ begin
       join public.event e on e.event_id = ea.event_id
       join players p on p.profile_id = ea.profile_id
       cross join today t
-      where ea.status = 'going'
+      where ea.status in ('going', 'played')
         and ea.played_at is not null
         and e.event_date <= t.d
-        and e.event_date >= t.d - 7
+        and e.event_date >  t.d - 7   -- today plus the 6 days before: 7 dates, not 8
     ),
     pairs as (
       -- One row per mutual match. It dates from the later of the two likes.
